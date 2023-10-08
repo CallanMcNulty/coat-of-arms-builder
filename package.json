@@ -1,0 +1,17 @@
+{
+  "name": "coat-of-arms-v3",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "paper": "^0.12.17"
+  },
+  "devDependencies": {
+    "typescript": "^5.1.6"
+  }
+}

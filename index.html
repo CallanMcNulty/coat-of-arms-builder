@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Coat of Arms Builder</title>
+	<script src="https://kit.fontawesome.com/0422dde105.js" crossorigin="anonymous"></script>
+	<style>
+		* {
+			box-sizing: border-box;
+			color: inherit;
+		}
+		select, input {
+			background-color: unset;
+			font-size: 1em;
+			font-family: serif;
+			border: .1em solid;
+		}
+		button {
+			height: 1.8em; width: 100%;
+			color: wheat; background-color: #0007;
+			border: none; cursor: pointer;
+			font-size: 1em; font-family: serif; text-transform: uppercase;
+		}
+	</style>
+</head>
+<body style="margin:0; background-color:grey; display:flex; height:100vh;">
+	<div id="shield-holder"
+		style="width:20em; padding:3em .7em; background-color:wheat; box-shadow:0 0 1em black; z-index:1;"
+	></div>
+	<div id="editor" style="width:0; flex-grow:1; margin-left:-1.5em; padding-bottom:1em; overflow:auto;"></div>
+	<script src="node_modules/paper/dist/paper-core.min.js"></script>
+	<script src="js/arms.js"></script>
+	<script src="js/paper-renderer.js"></script>
+	<script src="js/main.js"></script>
+</body>
+</html>

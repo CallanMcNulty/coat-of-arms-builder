@@ -1,0 +1,15 @@
+- Division rework
+	- Lines of division
+	- Correct ordering of divisions
+- Ordinaries
+	- Draw charges in correct order
+- Furs (Ermine, Vair)
+- UI for charge arrangement
+- Random arms
+	- Smart tinctures
+- More mobile charges
+	- Beasts & multi-tincture charges
+- UI for expanding same device charges
+- UI for collapsing other parts
+- More shield shapes
+- Blazons

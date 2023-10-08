@@ -1,0 +1,21 @@
+{
+	"compilerOptions": {
+		"target": "esnext",
+		"moduleResolution": "node",
+		"declaration": true,
+		"outDir": "./js",
+		"removeComments": true,
+		"allowJs": true,
+		"alwaysStrict": true,
+		"noImplicitAny": true,
+		"strictNullChecks": true,
+		"sourceMap": true,
+		"noImplicitThis": true,
+		"allowSyntheticDefaultImports": true
+	},
+	"exclude": [
+		"./node_modules/*",
+		"./static/*",
+		"./js/*"
+	]
+}
