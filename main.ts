@@ -33,15 +33,19 @@ function getAncestralCustomDataElement(element: any): HTMLElement {
 class EditorUIState {
 	part: Part;
 	inProgressField: Field;
+	inProgressDivision: Division;
 	selectedChargeClassIndex: number;
+	selectedCharge: number;
 	additionalCollapsedParts: Part[]|null = null;
 
 	constructor(part: Part, additionalCollapsedParts: Part[]|null) {
 		this.part = part;
-		this.inProgressField = part.field;
+		this.inProgressField = part.field.clone();
+		this.inProgressDivision = part.division.clone();
 		this.selectedChargeClassIndex = [
 			DeviceType.ordinary, DeviceType.mobileCharge, DeviceType.beast
 		].indexOf(part.device.type);
+		this.selectedCharge = part.device.id;
 		this.additionalCollapsedParts = additionalCollapsedParts;
 	}
 }
@@ -147,6 +151,12 @@ function getFieldFromUI(el: HTMLElement) {
 	return field;
 }
 
+function getDivisionFromUI(el: HTMLElement) {
+	let typeSelect = el.querySelector('.division-type-select') as HTMLSelectElement;
+	let lineSelect = el.querySelector('.division-line-select') as HTMLSelectElement;
+	return new Division(parseInt(typeSelect.value), lineSelect ? parseInt(lineSelect.value) : DivisionLine.straight);
+}
+
 function createUpdateEvent(update: ShieldUpdate): CustomEvent<ShieldUpdate> {
 	return new CustomEvent('shield-update', { bubbles:true, detail:update });
 }
@@ -185,26 +195,42 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 			buttonFunc: (event:MouseEvent) => {
 				event.target?.dispatchEvent(createUpdateEvent({
 					func: (ui, el) => {
-						let variationSelect = el.querySelector('.division-type-select') as HTMLSelectElement;
-						ui.part.divide(parseInt(variationSelect.value));
+						ui.part.divide(getDivisionFromUI(el));
 						return true;
 					},
 				}));
 			},
 			contentRows: [
 				`
-					<label>Type:</label>
+					<label>Per:</label>
 					<select class="division-type-select">
 					${[
 						'None', 'Pale', 'Fess', 'Bend', 'Bend Sinister',
 						'Chevron', 'Chevron Reversed', 'Quarterly', 'Saltire',
 					].map((label, idx) => `
-						<option value="${idx}"${uiState.part.division == idx ? ' selected' : ''}>${label}</option>
+						<option value="${idx}"${uiState.inProgressDivision.type == idx ? ' selected' : ''}>${label}</option>
 					`).join('\n')}
 					</select>
 				`,
+				...(uiState.inProgressDivision.type != DivisionType.none ? [`
+					<label>Line:</label>
+					<select class="division-line-select">
+					${['Straight', 'Indented', 'Wavy', 'Embattled', 'Engrailed', 'Invected'].map((label, idx) => `
+						<option value="${idx}"${uiState.inProgressDivision.line == idx ? ' selected' : ''}>${label}</option>
+					`).join('\n')}
+					</select>
+				`] : []),
 			],
-			setUpListeners: (el: HTMLElement) => {},
+			setUpListeners: (el: HTMLElement) => {
+				(el.querySelector('.division-type-select') as HTMLSelectElement).onchange = event => {
+					event.target?.dispatchEvent(createUpdateEvent({
+						func: (ui, e) => {
+							ui.inProgressDivision = getDivisionFromUI(e);
+							return false;
+						},
+					}));
+				};
+			},
 		},
 	];
 	// device / escutcheon section
@@ -217,7 +243,9 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 		[DeviceId.chevron, 'Chevron'],
 		[DeviceId.chevronReversed, 'Chevron Reversed'],
 		[DeviceId.chief, 'Chief'],
+		[DeviceId.base, 'Base'],
 		[DeviceId.canton, 'Canton'],
+		[DeviceId.quarter, 'Quarter'],
 		[DeviceId.cross, 'Cross'],
 		[DeviceId.saltire, 'Saltire'],
 		[DeviceId.roundel, 'Roundel'],
@@ -257,19 +285,27 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 			buttonFunc: (event:MouseEvent) => {
 				event.target?.dispatchEvent(createUpdateEvent({
 					func: (ui, el) => {
-						let chargeSelect = el.querySelector('.charge-select') as HTMLSelectElement;
-						ui.part.device = DEVICE.get(parseInt(chargeSelect.value))!;
-						let numberInput = el.querySelector('.device-number-input') as HTMLInputElement;
-						let number = Math.max(0, parseInt(numberInput.value));
 						const charges = ui.part.parent!.charges;
 						let groupIndex = charges.findIndex(c => c.equals(ui.part));
 						let precedingCharges = charges.filter((c,i) => i < groupIndex);
 						let followingCharges = charges.filter((c,i) => i > groupIndex && !c.equals(ui.part));
+						let chargeSelect = el.querySelector('.charge-select') as HTMLSelectElement;
+						ui.part.device = DEVICE.get(parseInt(chargeSelect.value))!;
+						let lineSelect = el.querySelector('.line-select') as HTMLSelectElement;
+						ui.part.line = lineSelect ? parseInt(lineSelect.value) : DivisionLine.straight;
+						let degreeNumberInput = el.querySelector('.degree-number-input') as HTMLInputElement;
+						ui.part.chargeDegree = degreeNumberInput ? parseInt(degreeNumberInput.value) : 1;
+						let numberInput = el.querySelector('.device-number-input') as HTMLInputElement;
+						let number = numberInput ? parseInt(numberInput.value) : 1;
 						let newCharges = [];
 						while(newCharges.length<number) {
 							newCharges.push(ui.part.clone());
 						}
-						ui.part.parent!.charges = [...precedingCharges, ...newCharges, ...followingCharges];
+						ui.part.parent!.charges = [];
+						let allCharges = [...precedingCharges, ...newCharges, ...followingCharges];
+						for(let charge of allCharges) {
+							ui.part.parent!.addCharge(charge);
+						}
 						return true;
 					},
 				}));
@@ -287,18 +323,31 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 					<label>Charge:</label>
 					<select class="charge-select">
 					${chargesOfSameType.map(charge => `
-						<option value="${charge.id}"${uiState.part.device.id == charge.id ? ' selected' : ''}>
+						<option value="${charge.id}"${uiState.selectedCharge == charge.id ? ' selected' : ''}>
 							${labelMap.get(charge.id)}
 						</option>
 					`).join('\n')}
 					</select>
+					${uiState.selectedCharge == DeviceId.mullet ? `
+						of
+						<input class="degree-number-input" type="number" style="width:3em;"
+							min="5" value="${Math.max(5, uiState.part.chargeDegree)}"
+						/>
+					` : ''}
 				`,
-				...(uiState.selectedChargeClassIndex != 0 ? [`
+				uiState.selectedChargeClassIndex != 0 ? `
 					<label>Number:</label>
 					<input class="device-number-input" type="number" style="width:3.5em;"
-						value="${(uiState.additionalCollapsedParts?.length ?? 0)+1}"
+						min="1" value="${(uiState.additionalCollapsedParts?.length ?? 0)+1}"
 					/>
-				`] : []),
+				` : `
+					<label>Line:</label>
+					<select class="line-select">
+					${['Straight', 'Indented', 'Wavy', 'Embattled', 'Engrailed', 'Invected'].map((label, idx) => `
+						<option value="${idx}"${uiState.part.line == idx ? ' selected' : ''}>${label}</option>
+					`).join('\n')}
+					</select>
+				`,
 			],
 			setUpListeners: (el: HTMLElement) => {
 				(el.querySelector('.charge-class-select') as HTMLSelectElement).onchange = event => {
@@ -310,11 +359,20 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 						},
 					}));
 				};
+				(el.querySelector('.charge-select') as HTMLSelectElement).onchange = event => {
+					event.target?.dispatchEvent(createUpdateEvent({
+						func: (ui, e) => {
+							let select = e.querySelector('.charge-select');
+							ui.selectedCharge = parseInt((select as HTMLSelectElement).value);
+							return false;
+						},
+					}));
+				};
 			},
 		});
 	}
 	// field section
-	if(uiState.part.division == Division.none) {
+	if(uiState.part.division.type == DivisionType.none) {
 		let workingField = uiState.inProgressField;
 		let nonPlain = workingField.variation != FieldVariation.plain;
 		let tinctureOptions = ['Or', 'Argent', 'Azure', 'Gules', 'Sable', 'Vert', 'Purpure'];
@@ -356,7 +414,9 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 				`,
 				...(nonPlain ? [`
 					<label>Number:</label>
-					<input class="field-number-input" type="number" value="${workingField.number}" style="width:3.5em;" />
+					<input class="field-number-input" type="number" style="width:3.5em;"
+						min="2" value="${workingField.number}"
+					/>
 				`] : []),
 			],
 			setUpListeners: (el: HTMLElement) => {
@@ -435,20 +495,17 @@ function updateShield() {
 }
 
 const shield = new Part({ device: DEVICE.get(DeviceId.heater)! });
-shield.divide(Division.pale);
-shield.divide(Division.chevron);
-shield.parts[0].chargeArrangement = ChargeArrangement.unspecified;
+shield.divide(new Division(DivisionType.fess, DivisionLine.wavy));
+shield.parts[0].chargeArrangement = ChargeArrangement.crosswise;
 shield.parts[0].field = Field.createPlain(Tincture.sable);
-for(let c=0; c<1; c++) {
+for(let c=0; c<6; c++) {
 	let fld = Field.createPlain(Tincture.gules);
 	shield.parts[0].addCharge(new Part({ device: DEVICE.get(DeviceId.heart)!, field: fld }));
 }
-// shield.parts[1].field.tinctureSecondary = Tincture.or;
-// shield.parts[1].field.variation = FieldVariation.chequy;
-// shield.parts[1].chargeArrangement = ChargeArrangement.unspecified;
-// shield.parts[1].chargeCountByRow = [3,3,1];
-// for(let c=0; c<7; c++) {
-// 	shield.parts[1].charges.push(
+shield.parts[1].field = Field.createPlain(Tincture.or);
+// shield.parts[1].chargeArrangement = ChargeArrangement.chevronwiseReversed;
+// for(let c=0; c<5; c++) {
+// 	shield.parts[1].addCharge(
 // 		new Part({ device: DEVICE.get(DeviceId.roundel)!, field:Field.createPlain(Tincture.azure) })
 // 	);
 // }

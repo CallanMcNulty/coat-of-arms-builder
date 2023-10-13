@@ -1,15 +1,37 @@
-- Division rework
-	- Lines of division
-	- Correct ordering of divisions
-- Ordinaries
-	- Draw charges in correct order
-- Furs (Ermine, Vair)
+- Different lines in field variation
 - UI for charge arrangement
+- Fix issue with charge number increase when device changes
+- Furs (Ermine, Vair)
+- Better maintain subdivisions on division change
 - Random arms
 	- Smart tinctures
 - More mobile charges
+	- Common
+		- Escutcheon
+		- Mascle
+		- Billet
+		- Annulet
+		- Crescent
+		- Tower
+		- Sun
+		- Moon
+		- Crown
+		- Sword
+		- Key
 	- Beasts & multi-tincture charges
-- UI for expanding same device charges
-- UI for collapsing other parts
+		- Lion
+		- Eagle
+		- Unicorn
+		- Stag
+		- Wolf
+		- Griffon
+		- Bear
 - More shield shapes
 - Blazons
+- More Ordinaries
+	- Bordure
+	- Pile (Reversed)
+	- Pall
+	- Etc.
+- UI for expanding same device charges
+- UI for collapsing other parts

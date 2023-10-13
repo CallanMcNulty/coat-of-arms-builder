@@ -7,6 +7,8 @@ class Part {
 	chargeCountByRow: number[];
 	division: Division;
 	parts: Part[];
+	line: DivisionLine;
+	chargeDegree: number;
 
 	public constructor(part: Partial<Part>) {
 		this.parent = part.parent ?? null;
@@ -15,8 +17,10 @@ class Part {
 		this.charges = part.charges ?? [];
 		this.chargeArrangement = part.chargeArrangement ?? ChargeArrangement.unspecified;
 		this.chargeCountByRow = part.chargeCountByRow ?? [];
-		this.division = part.division ?? Division.none;
+		this.division = part.division ?? new Division(DivisionType.none, DivisionLine.straight);
 		this.parts = part.parts ?? [];
+		this.line = part.line ?? DivisionLine.straight;
+		this.chargeDegree = part.chargeDegree ?? (this.device.id == DeviceId.mullet ? 5 : 1);
 	}
 
 	public clone(): Part {
@@ -25,6 +29,7 @@ class Part {
 		part.charges = this.charges.map(c => c.clone());
 		part.chargeCountByRow = [...this.chargeCountByRow];
 		part.parts = this.parts.map(p => p.clone());
+		part.division = this.division.clone();
 		return part;
 	}
 
@@ -39,7 +44,10 @@ class Part {
 	}
 
 	public addCharge(part: Part) {
-		if([DeviceType.escutcheon, DeviceType.subdivision].includes(part.device.type)) {
+		if(
+			[DeviceType.escutcheon, DeviceType.subdivision].includes(part.device.type) &&
+			(DeviceType.ordinary == part.device.type && this.charges.some(c => c.device.id == part.device.id))
+		) {
 			return;
 		}
 		this.charges.push(part);
@@ -48,21 +56,19 @@ class Part {
 
 	public divide(div: Division): void {
 		this.division = div;
-		if(div == Division.none) {
+		if(div.type == DivisionType.none) {
 			let firstSub = this.parts[0];
 			this.parts = [];
 			if(firstSub) {
 				this.charges = firstSub.charges;
 				this.chargeArrangement = firstSub.chargeArrangement;
 				this.chargeCountByRow = firstSub.chargeCountByRow;
-				this.division = firstSub.division;
-				this.parts = firstSub.parts;
-				[...this.parts, ...this.charges].forEach(p => p.parent = this);
+				this.charges.forEach(p => p.parent = this);
 			}
 			return;
 		}
 		let arr = [0,0];
-		if(div == Division.quarterly || div == Division.saltire) {
+		if(div.type == DivisionType.quarterly || div.type == DivisionType.saltire) {
 			arr.push(0,0);
 		}
 		this.parts = arr.map(_ => new Part({
@@ -78,7 +84,7 @@ class Part {
 	}
 }
 
-enum Division {
+enum DivisionType {
 	none,
 	pale,
 	fess,
@@ -88,6 +94,33 @@ enum Division {
 	chevronReversed,
 	quarterly,
 	saltire,
+}
+
+enum DivisionLine {
+	straight,
+	indented,
+	wavy,
+	embattled,
+	engrailed,
+	invected,
+}
+
+class Division {
+	type: DivisionType;
+	line: DivisionLine;
+
+	public constructor(type: DivisionType, line: DivisionLine) {
+		this.type = type;
+		this.line = line;
+	}
+
+	public equals(other: Division): boolean {
+		return this.type == other.type && this.line == other.line;
+	}
+
+	public clone(): Division {
+		return new Division(this.type, this.line);
+	}
 }
 
 enum ChargeArrangement {
@@ -170,7 +203,7 @@ enum DeviceType {
 enum DeviceId {
 	heater,
 	sub,
-	bend, bendSinister, fess, pale, chevron, chevronReversed, chief, canton, cross, saltire,
+	bend, bendSinister, fess, pale, chevron, chevronReversed, canton, quarter, chief, base, cross, saltire,
 	roundel, lozenge, mullet, heart,
 }
 
@@ -180,6 +213,7 @@ const DEVICE: Map<DeviceId, Device> = (() => {
 		{ id: DeviceId.heater, type: DeviceType.escutcheon },
 
 		{ id: DeviceId.sub, type: DeviceType.subdivision },
+
 		{ id: DeviceId.bend, type: DeviceType.ordinary },
 		{ id: DeviceId.bendSinister, type: DeviceType.ordinary },
 		{ id: DeviceId.fess, type: DeviceType.ordinary },
@@ -187,7 +221,9 @@ const DEVICE: Map<DeviceId, Device> = (() => {
 		{ id: DeviceId.chevron, type: DeviceType.ordinary },
 		{ id: DeviceId.chevronReversed, type: DeviceType.ordinary },
 		{ id: DeviceId.chief, type: DeviceType.ordinary },
+		{ id: DeviceId.base, type: DeviceType.ordinary },
 		{ id: DeviceId.canton, type: DeviceType.ordinary },
+		{ id: DeviceId.quarter, type: DeviceType.ordinary },
 		{ id: DeviceId.cross, type: DeviceType.ordinary },
 		{ id: DeviceId.saltire, type: DeviceType.ordinary },
 
