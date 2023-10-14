@@ -297,6 +297,8 @@ function dividePath(path: paper.Path, division: Division, fessPoint: paper.Point
 			return [
 				topRightAngleLine.intersect(path.intersect(paleIntersection), {trace:false}),
 				topRightAngleLine.intersect(path.subtract(paleIntersection), {trace:false}),
+				bottomRightAngleLine.intersect(path.intersect(paleIntersection), {trace:false}),
+				bottomRightAngleLine.intersect(path.subtract(paleIntersection), {trace:false}),
 			] as paper.Path[];
 		}
 	} else if([DivisionType.chevron, DivisionType.chevronReversed].includes(division.type)) {
@@ -330,7 +332,9 @@ function dividePath(path: paper.Path, division: Division, fessPoint: paper.Point
 	}
 }
 
-function calcShieldPart(part: Part, path: paper.Path, targetPart: Part|null=null): PathData[] {
+function calcShieldPart(
+	part: Part, path: paper.Path, targetPart: Part|null=null, parentFessPoint: paper.Point|null=null
+): PathData[] {
 	let paths: PathData[] = [];
 	let fessPoint = getFessPointForDevice(part.device, path);
 	// divisions / field
@@ -340,12 +344,68 @@ function calcShieldPart(part: Part, path: paper.Path, targetPart: Part|null=null
 			paths.push({ path:path?.pathData, color:'wheat' });
 			return paths;
 		}
-		paths.push(...part.parts.flatMap((p, i) => calcShieldPart(p, subdivisions[i], targetPart)));
+		paths.push(...part.parts.flatMap((p, i) => calcShieldPart(p, subdivisions[i], targetPart, fessPoint)));
 		// let lines = dividePath(path, part.division, fessPointAbsolute, true);
 		// paths.push(...lines.flatMap(line => ({path:line.pathData, color:'grey', line:true})));
 	} else {
 		if(!targetPart || part == targetPart) {
-			paths.push({ path:path?.pathData, color:colorMap.get(part.field.tincture) });
+			let applyTincture = (tincturedPath: paper.Path, tincture: Tincture) => {
+				if(![Tincture.ermine, Tincture.vair].includes(tincture)) {
+					paths.push({ path:tincturedPath?.pathData, color:colorMap.get(tincture) });
+				} else {
+					paths.push({ path:tincturedPath?.pathData, color:colorMap.get(Tincture.argent) });
+					let even = true;
+					for(let y=-49.99; y<60; y+=10) {
+						let xOffset = even ? 0 : 5;
+						for(let baseX=-50; baseX<60; baseX+=10) {
+							let x = baseX + xOffset;
+							if(tincture == Tincture.ermine) {
+								let tipY = y + 6;
+								let halfWidth = 2.5;
+								let nudge = halfWidth*.8;
+								let dotRad = .7;
+								let dotOffset = 1.3;
+								let spotPaths = [
+									new paper.Path([
+										new paper.Segment(new paper.Point(x+halfWidth*.3, tipY-1)),
+										new paper.Segment(new paper.Point(x, tipY)),
+										new paper.Segment(new paper.Point(x-halfWidth*.3, tipY-1)),
+										new paper.Segment(
+											new paper.Point(x-halfWidth, tipY), undefined, new paper.Point(nudge, -halfWidth),
+										),
+										new paper.Segment(new paper.Point(x, y)),
+										new paper.Segment(
+											new paper.Point(x+halfWidth, tipY), new paper.Point(-nudge, -halfWidth),
+										),
+									]),
+									new paper.Path.Circle(new paper.Point(x, y-dotOffset), dotRad),
+									new paper.Path.Circle(new paper.Point(x-dotOffset, y), dotRad),
+									new paper.Path.Circle(new paper.Point(x+dotOffset, y), dotRad),
+								].map(p => p.intersect(tincturedPath)).filter(p => (p as paper.Path).area);
+								paths.push(...spotPaths.map(s => ({path:s.pathData, color:colorMap.get(Tincture.sable)})));
+							} else {
+								let spotPath = new paper.Path([
+									new paper.Point(x,y),
+									new paper.Point(x+2.5, y+3),
+									new paper.Point(x+2.5, y+7),
+									new paper.Point(x+5, y+10),
+									new paper.Point(x-5, y+10),
+									new paper.Point(x-2.5, y+7),
+									new paper.Point(x-2.5, y+3),
+								]).intersect(path) as paper.Path;
+								if(spotPath.area) {
+									paths.push({
+										path: spotPath.pathData,
+										color: colorMap.get(Tincture.azure),
+									});
+								}
+							}
+						}
+						even = !even;
+					}
+				}
+			};
+			applyTincture(path, part.field.tincture);
 			if(part.field.variation != FieldVariation.plain) {
 				let corner = path.bounds.topLeft;
 				let rotation = 0;
@@ -367,27 +427,31 @@ function calcShieldPart(part: Part, path: paper.Path, targetPart: Part|null=null
 				let bars: paper.Path[] = [];
 				let barSize = path.bounds.height / part.field.number;
 				let orthogonalBars: paper.Path[] = [];
-				let orth = path.clone();
-				for(
-					let div = new paper.Path.Rectangle(
-						new paper.Rectangle(new paper.Point(path.bounds.x+barSize, -200), new paper.Size(200,400))
-					);
-					div.bounds.x-barSize < path.bounds.right;
-					div.translate(new paper.Point(barSize, 0))
-				) {
-					orthogonalBars.push(orth.subtract(div) as paper.Path);
-					orth = orth.intersect(div) as paper.Path;
+				let twoWay = [FieldVariation.lozengy, FieldVariation.chequy].includes(part.field.variation);
+				if(twoWay) {
+					let orth = path.clone();
+					for(
+						let div = new paper.Path.Rectangle(
+							new paper.Rectangle(new paper.Point(path.bounds.x+barSize, -200), new paper.Size(200,400))
+						);
+						div.bounds.x-barSize < path.bounds.right;
+						div.translate(new paper.Point(barSize, 0))
+					) {
+						orthogonalBars.push(orth.subtract(div) as paper.Path);
+						orth = orth.intersect(div) as paper.Path;
+					}
 				}
+				let line = twoWay ? DivisionLine.straight : part.field.variationLine;
 				let divider = getIntersectionPathForDivision(path,
 					new paper.Point(fessPoint.x, path.bounds.y),
-					new Division(DivisionType.fess, DivisionLine.straight),
+					new Division(DivisionType.fess, line),
 				);
 				for(let i=0; i<part.field.number; i++) {
 					let bar = path.subtract(divider);
 					divider.translate(new paper.Point(0, barSize));
 					bar = bar.intersect(divider);
 					let oddRow = i%2 == 1;
-					if([FieldVariation.lozengy, FieldVariation.chequy].includes(part.field.variation)) {
+					if(twoWay) {
 						for(let [j,orth] of orthogonalBars.entries()) {
 							let oddCol = j%2 == 1;
 							if(oddRow == oddCol) {
@@ -402,7 +466,7 @@ function calcShieldPart(part: Part, path: paper.Path, targetPart: Part|null=null
 					path.rotate(-rotation, corner);
 					bars.forEach(b => b.rotate(-rotation, corner));
 				}
-				paths.push(...bars.map(b => ({ path:b.pathData, color:colorMap.get(part.field.tinctureSecondary!) })));
+				bars.forEach(b => applyTincture(b, part.field.tinctureSecondary));
 			}
 		}
 		if(part == targetPart) {
@@ -442,14 +506,48 @@ function calcShieldPart(part: Part, path: paper.Path, targetPart: Part|null=null
 			// distribute any remaining charges to the rows with most spare space
 			let distributedCharges = chargesPerLineInfo.reduce((acc,curr) => curr.actual + acc, 0);
 			let toDistribute = totalSections - distributedCharges;
-			chargesPerLineInfo.sort((a,b) => b.expected%1 - a.expected%1);
-			for(let i=0; i<toDistribute; i++) {
-				let info = chargesPerLineInfo[i];
-				info.actual++;
+			if( // for symmetric cross arrangements, try to remain symmetric
+				targetArrangement == ChargeArrangement.crosswise &&
+				chargesPerLineInfo[0].actual == chargesPerLineInfo[1].actual
+			) {
+				if(toDistribute % 2 == 0) {
+					let perArm = toDistribute/2;
+					chargesPerLineInfo[0].actual += perArm;
+					chargesPerLineInfo[1].actual += perArm;
+				} else {
+					chargesPerLineInfo[2].actual += toDistribute;
+				}
+			} else {
+				chargesPerLineInfo.sort((a,b) => b.expected%1 - a.expected%1);
+				for(let i=0; i<toDistribute; i++) {
+					let info = chargesPerLineInfo[i];
+					info.actual++;
+				}
 			}
 			return lineSet.map(l => chargesPerLineInfo.find(i => i.line == l)!.actual - 1);
 		};
-		switch(part.chargeArrangement) {
+		let ordinaryArrangementMap = new Map([
+			[DeviceId.fess, ChargeArrangement.fesswise],
+			[DeviceId.pale, ChargeArrangement.palewise],
+			[DeviceId.bend, ChargeArrangement.bendwise],
+			[DeviceId.bendSinister, ChargeArrangement.bendwiseSinister],
+			[DeviceId.chevron, ChargeArrangement.chevronwise],
+			[DeviceId.chevronReversed, ChargeArrangement.chevronwiseReversed],
+			[DeviceId.saltire, ChargeArrangement.saltirewise],
+			[DeviceId.cross, ChargeArrangement.crosswise],
+		]);
+		let targetArrangement = part.chargeArrangement;
+		let targetMidPoint = fessPoint;
+		if(targetArrangement == ChargeArrangement.unspecified) {
+			let mapped = ordinaryArrangementMap.get(part.device.id);
+			if(mapped) {
+				targetArrangement = mapped;
+				if(parentFessPoint) {
+					targetMidPoint = parentFessPoint;
+				}
+			}
+		}
+		switch(targetArrangement) {
 			case ChargeArrangement.specified: {
 				chargesPerLine = [];
 				let [createdLines, lineHeight] = getLinesByCount(part.chargeCountByRow.length);
@@ -499,28 +597,28 @@ function calcShieldPart(part: Part, path: paper.Path, targetPart: Part|null=null
 				break;
 			}
 			case ChargeArrangement.fesswise:
-				lines = dividePath(path, new Division(DivisionType.fess, DivisionLine.straight), fessPoint, true);
+				lines = dividePath(path, new Division(DivisionType.fess, DivisionLine.straight), targetMidPoint, true);
 				break;
 			case ChargeArrangement.palewise:
-				lines = dividePath(path, new Division(DivisionType.pale, DivisionLine.straight), fessPoint, true);
+				lines = dividePath(path, new Division(DivisionType.pale, DivisionLine.straight), targetMidPoint, true);
 				break;
 			case ChargeArrangement.bendwise:
-				lines = dividePath(path, new Division(DivisionType.bend, DivisionLine.straight), fessPoint, true);
+				lines = dividePath(path, new Division(DivisionType.bend, DivisionLine.straight), targetMidPoint, true);
 				break;
 			case ChargeArrangement.bendwiseSinister:
-				lines = dividePath(path, new Division(DivisionType.bendSinister, DivisionLine.straight), fessPoint, true);
+				lines = dividePath(path, new Division(DivisionType.bendSinister, DivisionLine.straight), targetMidPoint, true);
 				break;
 			case ChargeArrangement.chevronwise:
-				lines = dividePath(path, new Division(DivisionType.chevron, DivisionLine.straight), fessPoint, true);
+				lines = dividePath(path, new Division(DivisionType.chevron, DivisionLine.straight), targetMidPoint, true);
 				break;
 			case ChargeArrangement.chevronwiseReversed:
-				lines = dividePath(path, new Division(DivisionType.chevronReversed, DivisionLine.straight), fessPoint, true);
+				lines = dividePath(path, new Division(DivisionType.chevronReversed, DivisionLine.straight), targetMidPoint, true);
 				break;
 			case ChargeArrangement.crosswise:
-				lines = dividePath(path, new Division(DivisionType.quarterly, DivisionLine.straight), fessPoint, true);
+				lines = dividePath(path, new Division(DivisionType.quarterly, DivisionLine.straight), targetMidPoint, true);
 				break;
 			case ChargeArrangement.saltirewise:
-				lines = dividePath(path, new Division(DivisionType.saltire, DivisionLine.straight), fessPoint, true);
+				lines = dividePath(path, new Division(DivisionType.saltire, DivisionLine.straight), targetMidPoint, true);
 				break;
 		}
 		if(lines.length) {
@@ -539,7 +637,9 @@ function calcShieldPart(part: Part, path: paper.Path, targetPart: Part|null=null
 			};
 			if(chargesPerLine.length < lines.length) {
 				// check for a center point
-				if(mobileCharges.length % 2 == 1 && part.chargeArrangement != ChargeArrangement.crosswise) {
+				if(mobileCharges.length % 2 == 1 &&
+					(mobileCharges.length == 1 || targetArrangement != ChargeArrangement.crosswise)
+				) {
 					let endpoints = lines.flatMap(l => [l.segments[0], l.segments[l.segments.length-1]].map(s => s.point));
 					let endpointCounts: {ep:paper.Point, count:number}[] = [];
 					for(let endpoint of endpoints) {
@@ -572,8 +672,17 @@ function calcShieldPart(part: Part, path: paper.Path, targetPart: Part|null=null
 					centerPosition = null;
 				}
 			}
-			// get paths
-			let chargeSize = minChargeSeparation * .8;
+			let chargeSize = minChargeSeparation * .9;
+			// ensure charges are (probably) not too big for available space
+			for(let i=0; i<3; i++) {
+				let idx = Math.floor((chargePositions.length*i)/3);
+				let pos = chargePositions[idx];
+				let lengths = [DivisionType.fess, DivisionType.pale, DivisionType.bend, DivisionType.bendSinister].map(
+					div => dividePath(path, new Division(div, DivisionLine.straight), pos, true).pop()
+				).filter(n => n).map(l => l!.length * .6);
+				chargeSize = Math.min(chargeSize, ...lengths);
+			}
+			// create charge paths
 			for(let [chargeIdx, charge] of mobileCharges.entries()) {
 				let pos = chargePositions[chargeIdx];
 				let chargePath = getPathForPart(charge,
@@ -582,7 +691,7 @@ function calcShieldPart(part: Part, path: paper.Path, targetPart: Part|null=null
 						new paper.Size(chargeSize, chargeSize),
 					),
 				);
-				chargePathMap.set(charge, calcShieldPart(charge, path.intersect(chargePath) as paper.Path, targetPart));
+				chargePathMap.set(charge, calcShieldPart(charge, path.intersect(chargePath) as paper.Path, targetPart, fessPoint));
 			}
 		}
 	}
@@ -620,7 +729,7 @@ function calcShieldPart(part: Part, path: paper.Path, targetPart: Part|null=null
 					break;
 				}
 			}
-			chargePathMap.set(ordinary, calcShieldPart(ordinary, path.intersect(ord) as paper.Path, targetPart));
+			chargePathMap.set(ordinary, calcShieldPart(ordinary, path.intersect(ord) as paper.Path, targetPart, fessPoint));
 		} else if([DeviceId.chevron, DeviceId.chevronReversed].includes(ordinary.device.id)) {
 			let reversed = DeviceId.chevronReversed == ordinary.device.id;
 			let angles = [true, false].map(ex => {
@@ -630,9 +739,12 @@ function calcShieldPart(part: Part, path: paper.Path, targetPart: Part|null=null
 				}
 				return angle;
 			});
-			angles[1].translate(new paper.Point(0, halfWidth*2*(reversed ? 1 : -1)));
+			let dist = halfWidth*2*(reversed ? 1 : -1);
+			angles[1].translate(new paper.Point(0, dist));
 			let chev = angles[1].subtract(angles[0]);
-			chargePathMap.set(ordinary, calcShieldPart(ordinary, path.intersect(chev) as paper.Path, targetPart));
+			chargePathMap.set(ordinary, calcShieldPart(
+				ordinary, path.intersect(chev) as paper.Path, targetPart, new paper.Point(fessPoint.x, fessPoint.y + dist*.16)
+			));
 		} else if([DeviceId.cross, DeviceId.saltire].includes(ordinary.device.id)) {
 			let angle = getRightAnglePathForLine(path, fessPoint, ordinary.line, true);
 			angle.translate(new paper.Point(0, -halfWidth));
@@ -644,7 +756,7 @@ function calcShieldPart(part: Part, path: paper.Path, targetPart: Part|null=null
 				base = base.subtract(angle) as paper.Path;
 				angle.rotate(90, fessPoint);
 			}
-			chargePathMap.set(ordinary, calcShieldPart(ordinary, base, targetPart));
+			chargePathMap.set(ordinary, calcShieldPart(ordinary, base, targetPart, fessPoint));
 		} else if([DeviceId.canton, DeviceId.quarter].includes(ordinary.device.id)) {
 			let pt = fessPoint;
 			if(DeviceId.canton == ordinary.device.id) {
@@ -653,7 +765,7 @@ function calcShieldPart(part: Part, path: paper.Path, targetPart: Part|null=null
 			}
 			let angle = getRightAnglePathForLine(path, pt, ordinary.line, false);
 			angle.rotate(-45, pt);
-			chargePathMap.set(ordinary, calcShieldPart(ordinary, path.intersect(angle) as paper.Path, targetPart));
+			chargePathMap.set(ordinary, calcShieldPart(ordinary, path.intersect(angle) as paper.Path, targetPart, fessPoint));
 		} else if([DeviceId.chief, DeviceId.base].includes(ordinary.device.id)) {
 			let div = getIntersectionPathForDivision(path, fessPoint, new Division(DivisionType.fess, ordinary.line));
 			if(DeviceId.chief == ordinary.device.id) {
@@ -661,7 +773,7 @@ function calcShieldPart(part: Part, path: paper.Path, targetPart: Part|null=null
 			}
 			let y = (fessPoint.y + (DeviceId.base == ordinary.device.id ? path.bounds.bottom : path.bounds.top)) / 2;
 			div.translate(new paper.Point(0, y - fessPoint.y));
-			chargePathMap.set(ordinary, calcShieldPart(ordinary, path.subtract(div) as paper.Path, targetPart));
+			chargePathMap.set(ordinary, calcShieldPart(ordinary, path.subtract(div) as paper.Path, targetPart, fessPoint));
 		}
 	}
 	for(let c of part.charges) {

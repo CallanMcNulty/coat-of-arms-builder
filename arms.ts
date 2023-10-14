@@ -15,8 +15,9 @@ class Part {
 		this.device = part.device ?? DEVICE.get(DeviceId.heater)!;
 		this.field = part.field ?? Field.createPlain();
 		this.charges = part.charges ?? [];
+		this.charges.forEach(c => c.parent = this);
 		this.chargeArrangement = part.chargeArrangement ?? ChargeArrangement.unspecified;
-		this.chargeCountByRow = part.chargeCountByRow ?? [];
+		this.chargeCountByRow = part.chargeCountByRow ?? [this.charges.length];
 		this.division = part.division ?? new Division(DivisionType.none, DivisionLine.straight);
 		this.parts = part.parts ?? [];
 		this.line = part.line ?? DivisionLine.straight;
@@ -35,6 +36,9 @@ class Part {
 
 	public equals(other: Part): boolean {
 		let childEquivalences = [[this.charges,other.charges], [this.parts,other.parts]].map(pair => {
+			if(pair[0].length != pair[1].length) {
+				return false;
+			}
 			return !pair[0].some((part,i) => !part.equals(pair[1][i]));
 		});
 		return childEquivalences[0] && childEquivalences[1] && this.chargeArrangement == other.chargeArrangement &&
@@ -54,32 +58,55 @@ class Part {
 		part.parent = this;
 	}
 
+	public updateChargeArrangement(chargeArrangement: ChargeArrangement, chargeCountByRow: number[]=[]) {
+		this.chargeArrangement = chargeArrangement;
+		let covered = 0;
+		let counts = [];
+		for(let count of chargeCountByRow) {
+			let needed = this.charges.length - covered;
+			if(count >= needed) {
+				covered += needed;
+				counts.push(needed);
+				break;
+			} else {
+				covered += count;
+				counts.push(count);
+			}
+		}
+		let needed = this.charges.length - covered;
+		if(needed > 0) {
+			counts.push(needed);
+		}
+		this.chargeCountByRow = counts;
+	}
+
 	public divide(div: Division): void {
-		this.division = div;
 		if(div.type == DivisionType.none) {
 			let firstSub = this.parts[0];
-			this.parts = [];
 			if(firstSub) {
 				this.charges = firstSub.charges;
 				this.chargeArrangement = firstSub.chargeArrangement;
 				this.chargeCountByRow = firstSub.chargeCountByRow;
 				this.charges.forEach(p => p.parent = this);
+				this.field = firstSub.field;
+				this.division = firstSub.division;
+				this.parts = firstSub.parts;
+				this.line = firstSub.line;
+				this.chargeDegree = firstSub.chargeDegree;
 			}
 			return;
 		}
-		let arr = [0,0];
+		let desiredPartCount = 2;
 		if(div.type == DivisionType.quarterly || div.type == DivisionType.saltire) {
-			arr.push(0,0);
+			desiredPartCount = 4;
 		}
-		this.parts = arr.map(_ => new Part({
-			parent: this,
-			device: DEVICE.get(DeviceId.sub)!,
-			chargeArrangement: this.chargeArrangement,
-			chargeCountByRow: this.chargeCountByRow,
-		}));
-		this.parts[0].field = this.field;
-		this.parts[0].charges = this.charges;
-		this.charges.forEach(c => c.parent = this.parts[0]);
+		while(this.parts.length < desiredPartCount) {
+			let newPart = new Part(this.parts.length ? {} : this.clone());
+			newPart.parent = this;
+			newPart.device = DEVICE.get(DeviceId.sub)!;
+			this.parts.push(newPart);
+		}
+		this.division = div;
 		this.charges = [];
 	}
 }
@@ -138,6 +165,7 @@ enum ChargeArrangement {
 
 class Field {
 	variation: FieldVariation;
+	variationLine: DivisionLine;
 	tincture: Tincture;
 	tinctureSecondary: Tincture;
 	number: number;
@@ -148,6 +176,7 @@ class Field {
 		field.tincture = tincture ?? Tincture.argent;
 		field.tinctureSecondary = Tincture.argent;
 		field.number = 8;
+		field.variationLine = DivisionLine.straight;
 		return field;
 	}
 
@@ -157,6 +186,7 @@ class Field {
 		field.tincture = this.tincture;
 		field.tinctureSecondary = this.tinctureSecondary;
 		field.number = this.number;
+		field.variationLine = this.variationLine;
 		return field;
 	}
 
@@ -185,6 +215,8 @@ enum Tincture {
 	sable,
 	vert,
 	purpure,
+	ermine,
+	vair,
 }
 
 class Device {

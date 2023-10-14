@@ -36,6 +36,7 @@ class EditorUIState {
 	inProgressDivision: Division;
 	selectedChargeClassIndex: number;
 	selectedCharge: number;
+	selectedChargeArrangement: number;
 	additionalCollapsedParts: Part[]|null = null;
 
 	constructor(part: Part, additionalCollapsedParts: Part[]|null) {
@@ -46,6 +47,7 @@ class EditorUIState {
 			DeviceType.ordinary, DeviceType.mobileCharge, DeviceType.beast
 		].indexOf(part.device.type);
 		this.selectedCharge = part.device.id;
+		this.selectedChargeArrangement = part.chargeArrangement;
 		this.additionalCollapsedParts = additionalCollapsedParts;
 	}
 }
@@ -140,6 +142,7 @@ function getFieldFromUI(el: HTMLElement) {
 	let tinctureSelect = el.querySelector('.field-tincture-select') as HTMLSelectElement;
 	let tinctureSecondarySelect = el.querySelector('.field-tincture-secondary-select') as HTMLSelectElement;
 	let numberInput = el.querySelector('.field-number-input') as HTMLInputElement;
+	let lineSelect = el.querySelector('.field-line-select') as HTMLSelectElement;
 	let field = Field.createPlain(parseInt(tinctureSelect.value));
 	field!.variation = parseInt(variationSelect.value);
 	if(tinctureSecondarySelect) {
@@ -147,6 +150,9 @@ function getFieldFromUI(el: HTMLElement) {
 	}
 	if(numberInput) {
 		field!.number = Math.max(0, parseInt(numberInput.value));
+	}
+	if(lineSelect) {
+		field!.variationLine = parseInt(lineSelect.value);
 	}
 	return field;
 }
@@ -330,7 +336,7 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 					</select>
 					${uiState.selectedCharge == DeviceId.mullet ? `
 						of
-						<input class="degree-number-input" type="number" style="width:3em;"
+						<input class="degree-number-input" type="number" style="width:2.5em;"
 							min="5" value="${Math.max(5, uiState.part.chargeDegree)}"
 						/>
 					` : ''}
@@ -375,7 +381,7 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 	if(uiState.part.division.type == DivisionType.none) {
 		let workingField = uiState.inProgressField;
 		let nonPlain = workingField.variation != FieldVariation.plain;
-		let tinctureOptions = ['Or', 'Argent', 'Azure', 'Gules', 'Sable', 'Vert', 'Purpure'];
+		let tinctureOptions = ['Or', 'Argent', 'Azure', 'Gules', 'Sable', 'Vert', 'Purpure', 'Ermine', 'Vair'];
 		sections.push({
 			title: 'Field', buttonText: 'Change',
 			buttonFunc: (event:MouseEvent) => {
@@ -414,9 +420,17 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 				`,
 				...(nonPlain ? [`
 					<label>Number:</label>
-					<input class="field-number-input" type="number" style="width:3.5em;"
+					<input class="field-number-input" type="number" style="width:2.5em;"
 						min="2" value="${workingField.number}"
 					/>
+					${![FieldVariation.chequy, FieldVariation.lozengy].includes(workingField.variation) ? `
+						<label>Line:</label>
+						<select class="field-line-select">
+						${['Straight', 'Indented', 'Wavy', 'Embattled'].map((label, idx) => `
+							<option value="${idx}"${workingField.variationLine == idx ? ' selected' : ''}>${label}</option>
+						`).join('\n')}
+						</select>
+					` : ''}
 				`] : []),
 			],
 			setUpListeners: (el: HTMLElement) => {
@@ -431,11 +445,57 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 			},
 		});
 	}
+	if(uiState.part.charges.filter(c => c.device.type == DeviceType.mobileCharge).length > 1) {
+		sections.push({
+			title: 'Charge Arrangement', buttonText: 'Arrange',
+			buttonFunc: (event:MouseEvent) => {
+				event.target?.dispatchEvent(createUpdateEvent({
+					func: (ui, el) => {
+						let select = el.querySelector('.arrangement-select');
+						let rowInput = el.querySelector('.number-per-row-input') as HTMLInputElement;
+						let counts = rowInput ? rowInput.value.split(',').map(s => parseInt(s)).filter(n => !isNaN(n)) : [];
+						ui.part.updateChargeArrangement(parseInt((select as HTMLSelectElement).value), counts);
+						return true;
+					},
+				}));
+			},
+			contentRows: [
+				`
+					<label>Arrangement:</label>
+					<select class="arrangement-select">
+					${[
+						'Default', 'Per Row', 'Bendwise', 'Bendwise Sinister',
+						'Chevronwise', 'Chevronwise Reversed', 'Crosswise', 'Fesswise', 'Palewise', 'Saltirewise',
+					].map((label, idx) => `
+						<option value="${idx}"${uiState.selectedChargeArrangement == idx ? ' selected' : ''}>${label}</option>
+					`).join('\n')}
+					</select>
+				`,
+				...(uiState.selectedChargeArrangement == ChargeArrangement.specified ? [`
+					<label>Charge Counts:</label>
+					<input class="number-per-row-input" type="text" style="width:6em;"
+						value="${uiState.part.chargeCountByRow.join(', ')}"
+					/>
+				`] : []),
+			],
+			setUpListeners: (el: HTMLElement) => {
+				(el.querySelector('.arrangement-select') as HTMLSelectElement).onchange = event => {
+					event.target?.dispatchEvent(createUpdateEvent({
+						func: (ui, e) => {
+							let select = e.querySelector('.arrangement-select');
+							ui.selectedChargeArrangement = parseInt((select as HTMLSelectElement).value);
+							return false;
+						},
+					}));
+				};
+			},
+		})
+	}
 	// add sections to document
 	for(let section of sections) {
 		let el = inflate(`
 			<div class="editor-section" style="
-				width:15em; text-align:center; border:.1em solid;
+				width:16em; text-align:center; border:.1em solid;
 				margin-left:.5em; padding:.25em .5em;
 				display:flex; flex-direction:column;
 			">
@@ -495,20 +555,22 @@ function updateShield() {
 }
 
 const shield = new Part({ device: DEVICE.get(DeviceId.heater)! });
-shield.divide(new Division(DivisionType.fess, DivisionLine.wavy));
-shield.parts[0].chargeArrangement = ChargeArrangement.crosswise;
-shield.parts[0].field = Field.createPlain(Tincture.sable);
-for(let c=0; c<6; c++) {
-	let fld = Field.createPlain(Tincture.gules);
-	shield.parts[0].addCharge(new Part({ device: DEVICE.get(DeviceId.heart)!, field: fld }));
-}
-shield.parts[1].field = Field.createPlain(Tincture.or);
-// shield.parts[1].chargeArrangement = ChargeArrangement.chevronwiseReversed;
-// for(let c=0; c<5; c++) {
-// 	shield.parts[1].addCharge(
-// 		new Part({ device: DEVICE.get(DeviceId.roundel)!, field:Field.createPlain(Tincture.azure) })
-// 	);
+shield.divide(new Division(DivisionType.fess, DivisionLine.straight));
+shield.parts[0].field = Field.createPlain(Tincture.argent);
+// shield.parts[0].updateChargeArrangement(ChargeArrangement.crosswise);
+// for(let c=0; c<6; c++) {
+// 	let fld = Field.createPlain(Tincture.gules);
+// 	shield.parts[0].addCharge(new Part({ device: DEVICE.get(DeviceId.heart)!, field: fld }));
 // }
+shield.parts[1].field = Field.createPlain(Tincture.or);
+let chev = new Part({ device: DEVICE.get(DeviceId.cross)!, field:Field.createPlain(Tincture.azure) });
+chev.line = DivisionLine.straight;
+shield.parts[1].addCharge(chev);
+for(let c=0; c<5; c++) {
+	chev.addCharge(
+		new Part({ device: DEVICE.get(DeviceId.roundel)!, field:Field.createPlain() })
+	);
+}
 updateShield();
 let mainEditor = getEditor(shield);
 document.getElementById('editor')?.appendChild(mainEditor);

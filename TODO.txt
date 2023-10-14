@@ -1,8 +1,3 @@
-- Different lines in field variation
-- UI for charge arrangement
-- Fix issue with charge number increase when device changes
-- Furs (Ermine, Vair)
-- Better maintain subdivisions on division change
 - Random arms
 	- Smart tinctures
 - More mobile charges
@@ -28,6 +23,10 @@
 		- Bear
 - More shield shapes
 - Blazons
+- Counter-embattled line where appropriate
+- Charge orientation
+	- On a bend, charges are bendwise
+- Display for multi-charge editor shows all charges
 - More Ordinaries
 	- Bordure
 	- Pile (Reversed)
