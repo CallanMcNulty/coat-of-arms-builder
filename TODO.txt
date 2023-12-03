@@ -1,19 +1,9 @@
 - Random arms
-	- Smart tinctures
-- More mobile charges
+	- Rule of tincture
+- Multi-tincture charges
 	- Common
-		- Escutcheon
-		- Mascle
-		- Billet
-		- Annulet
-		- Crescent
-		- Tower
-		- Sun
-		- Moon
-		- Crown
 		- Sword
-		- Key
-	- Beasts & multi-tincture charges
+	- Beasts
 		- Lion
 		- Eagle
 		- Unicorn

@@ -1,3 +1,25 @@
+function randomBetween(min: number|number[], max: number|number[]) {
+	if(typeof min == 'object') {
+		min = Math.max(...min);
+	}
+	if(typeof max == 'object') {
+		max = Math.min(...max);
+	}
+	return Math.random()*(max - min) + min;
+}
+
+function randomInt(min: number, max: number): number {
+	return Math.floor(randomBetween(min, max));
+}
+
+function randomFromArray<T>(arr: T[]): T {
+	return arr[randomInt(0, arr.length)];
+}
+
+function shuffleArray<T>(array: T[]): T[] {
+	return array.map(item => ({n:Math.random(), i:item})).sort((a,b) => a.n - b.n).map(o => o.i);
+}
+
 function inflate(html: string): HTMLElement {
 	const template = document.createElement('template');
 	html = html.trim();
@@ -255,9 +277,18 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 		[DeviceId.cross, 'Cross'],
 		[DeviceId.saltire, 'Saltire'],
 		[DeviceId.roundel, 'Roundel'],
+		[DeviceId.annulet, 'Annulet'],
 		[DeviceId.lozenge, 'Lozenge'],
+		[DeviceId.mascle, 'Mascle'],
 		[DeviceId.mullet, 'Mullet'],
 		[DeviceId.heart, 'Heart'],
+		[DeviceId.escutcheon, 'Escutcheon'],
+		[DeviceId.crescent, 'Crescent'],
+		[DeviceId.billet, 'Billet'],
+		[DeviceId.tower, 'Tower'],
+		[DeviceId.crown, 'Crown'],
+		[DeviceId.key, 'Key'],
+		[DeviceId.trefoil, 'Trefoil'],
 	]);
 	let deviceArray = [...DEVICE.values()];
 	if(uiState.part.device.type == DeviceType.escutcheon) {
@@ -541,7 +572,11 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 
 function updateEditor(editor: HTMLElement, part: Part) {
 	let data = (editor as any).arms as EditorUIState;
-	editor.parentNode?.replaceChild(getEditor(part, data.additionalCollapsedParts), editor);
+	let newEditor = getEditor(part, data.additionalCollapsedParts);
+	editor.parentNode?.replaceChild(newEditor, editor);
+	if(!part.parent) {
+		mainEditor = newEditor;
+	}
 }
 
 function updateShield() {
@@ -554,23 +589,17 @@ function updateShield() {
 	holder.appendChild(svg);
 }
 
-const shield = new Part({ device: DEVICE.get(DeviceId.heater)! });
-shield.divide(new Division(DivisionType.fess, DivisionLine.straight));
-shield.parts[0].field = Field.createPlain(Tincture.argent);
-// shield.parts[0].updateChargeArrangement(ChargeArrangement.crosswise);
-// for(let c=0; c<6; c++) {
-// 	let fld = Field.createPlain(Tincture.gules);
-// 	shield.parts[0].addCharge(new Part({ device: DEVICE.get(DeviceId.heart)!, field: fld }));
-// }
-shield.parts[1].field = Field.createPlain(Tincture.or);
-let chev = new Part({ device: DEVICE.get(DeviceId.cross)!, field:Field.createPlain(Tincture.azure) });
-chev.line = DivisionLine.straight;
-shield.parts[1].addCharge(chev);
-for(let c=0; c<5; c++) {
-	chev.addCharge(
-		new Part({ device: DEVICE.get(DeviceId.roundel)!, field:Field.createPlain() })
-	);
+function randomize() {
+	shield.randomize(6);
+	updateShield();
+	updateEditor(mainEditor, shield);
 }
+
+let shield = new Part({ device: DEVICE.get(DeviceId.heater)! });
+shield.field = Field.createPlain(Tincture.azure);
+shield.divide(new Division(DivisionType.quarterly, DivisionLine.straight));
+shield.parts[3].field = Field.createPlain(Tincture.sable);
+// shield.addCharge(new Part({ device: DEVICE.get(DeviceId.key) }));
 updateShield();
 let mainEditor = getEditor(shield);
 document.getElementById('editor')?.appendChild(mainEditor);

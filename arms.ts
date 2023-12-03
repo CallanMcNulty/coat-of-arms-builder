@@ -11,6 +11,10 @@ class Part {
 	chargeDegree: number;
 
 	public constructor(part: Partial<Part>) {
+		this.apply(part);
+	}
+
+	private apply(part: Partial<Part>) {
 		this.parent = part.parent ?? null;
 		this.device = part.device ?? DEVICE.get(DeviceId.heater)!;
 		this.field = part.field ?? Field.createPlain();
@@ -22,6 +26,136 @@ class Part {
 		this.parts = part.parts ?? [];
 		this.line = part.line ?? DivisionLine.straight;
 		this.chargeDegree = part.chargeDegree ?? (this.device.id == DeviceId.mullet ? 5 : 1);
+	}
+
+	public randomize(degree: number) {
+		let complexity = degree;
+		let disallowedTinctures: Tincture[] = [];
+		if(this.parent) {
+			disallowedTinctures = [this.parent, ...this.parent.parts, ...this.parent.charges].flatMap(p => {
+				let tinctures = [p.field.tincture];
+				if(p.field.variation != FieldVariation.plain) {
+					tinctures.push(p.field.tinctureSecondary);
+				}
+				return tinctures;
+			});
+		}
+		let baseTinctures = shuffleArray([
+			Tincture.or, Tincture.argent, Tincture.azure, Tincture.gules, Tincture.sable, Tincture.vert, Tincture.purpure
+		]).filter(t => !disallowedTinctures.includes(t));
+		let field = Field.createPlain(baseTinctures.pop());
+		this.apply({field:field, parent:this.parent, device:this.device});
+		if(complexity <= 0) {
+			return;
+		}
+		let features = [
+			{ feature: 'charge', cost:1, subFeatures:[
+				{ feature: 'ordinary', cost:1, subFeatures:[
+					{ feature: 'ordinaryWithLine', cost:1, subFeatures:[] },
+					{ feature: 'complexOrdinary', cost:3, subFeatures:[] },
+				]},
+				{ feature: 'multiCharge', cost:1, subFeatures:[] },
+				{ feature: 'complexMobileCharge', cost:2, subFeatures:[] },
+			]},
+			{ feature: 'field', cost:1, subFeatures:[
+				{ feature: 'fur', cost:2, subFeatures:[] },
+				{ feature: 'fieldVariation', cost:1, subFeatures:[
+					{ feature: 'fieldVariationWithLine', cost:1, subFeatures:[] },
+					{ feature: 'complexFieldVariation', cost:2, subFeatures:[] },
+				]},
+			]},
+			{ feature: 'division', cost:2, subFeatures:[
+				{ feature: 'divisionWithLine', cost:1, subFeatures:[] },
+				{ feature: '4PartDivision', cost:3, subFeatures:[] },
+			]},
+		];
+		let selectedFeatures: string[] = [];
+		while(complexity && selectedFeatures.length < 4) {
+			features.filter(f => f.cost < complexity);
+			features = shuffleArray(features);
+			let selected = features.pop()!;
+			complexity -= selected.cost;
+			if(selected.subFeatures.length) {
+				features.push(randomFromArray(selected.subFeatures));
+			}
+			selectedFeatures.push(selected.feature);
+		}
+		if(selectedFeatures.includes('field')) {
+			if(selectedFeatures.includes('fur')) {
+				this.field.tincture = randomFromArray([Tincture.ermine, Tincture.vair]);
+			} else if(selectedFeatures.includes('fieldVariation')) {
+				let variation: FieldVariation;
+				if(selectedFeatures.includes('complexFieldVariation')) {
+					variation = randomFromArray([FieldVariation.chequy, FieldVariation.lozengy]);
+				} else {
+					variation = randomFromArray([
+						FieldVariation.barry, FieldVariation.paly, FieldVariation.bendy, FieldVariation.bendySinister
+					]);
+				}
+				this.field.variation = variation;
+				this.field.number = randomInt(3, 15);
+				this.field.tinctureSecondary = baseTinctures.pop() ?? Tincture.argent;
+				if(selectedFeatures.includes('fieldVariationWithLine')) {
+					this.field.variationLine = randomFromArray([
+						DivisionLine.embattled, DivisionLine.indented, DivisionLine.wavy
+					]);
+				}
+			}
+		}
+		if(selectedFeatures.includes('charge')) {
+			if(selectedFeatures.includes('ordinary')) {
+				let ordinaryDevice = randomFromArray([...DEVICE.values()].filter(d => d.type == DeviceType.ordinary));
+				let line = undefined;
+				if(selectedFeatures.includes('ordinaryWithLine')) {
+					line = randomFromArray([
+						DivisionLine.embattled, DivisionLine.engrailed,
+						DivisionLine.invected, DivisionLine.indented, DivisionLine.wavy,
+					]);
+				}
+				let ordinary = new Part({device: ordinaryDevice, line: line});
+				this.addCharge(ordinary);
+				ordinary.randomize(selectedFeatures.includes('complexOrdinary') ? 2 : 0);
+			} else {
+				let mobileDevice = randomFromArray([...DEVICE.values()].filter(d => d.type == DeviceType.mobileCharge));
+				let charge = new Part({device: mobileDevice});
+				this.addCharge(charge);
+				charge.randomize(selectedFeatures.includes('complexMobileCharge') ? 2 : 0);
+				if(mobileDevice.id == DeviceId.mullet) {
+					charge.chargeDegree = randomInt(5, 9);
+				}
+				if(selectedFeatures.includes('multiCharge')) {
+					let count = randomInt(1, 9);
+					for(let i=0; i<count; i++) {
+						this.addCharge(charge.clone());
+					}
+				}
+			}
+		}
+		if(selectedFeatures.includes('division')) {
+			let type: DivisionType;
+			if(selectedFeatures.includes('4PartDivision')) {
+				type = randomFromArray([DivisionType.quarterly, DivisionType.saltire]);
+			} else {
+				type = randomFromArray([
+					DivisionType.pale, DivisionType.fess, DivisionType.bend, DivisionType.bendSinister,
+					DivisionType.chevron, DivisionType.chevronReversed,
+				]);
+			}
+			let division = new Division(type, DivisionLine.straight);
+			if(selectedFeatures.includes('divisionWithLine')) {
+				division.line = randomFromArray([
+					DivisionLine.embattled, DivisionLine.engrailed,
+					DivisionLine.invected, DivisionLine.indented, DivisionLine.wavy,
+				]);
+			}
+			this.divide(division);
+			let childComplexity = Math.floor(complexity / (this.parts.length - 1));
+			let otherParts = [...this.parts];
+			otherParts.shift();
+			for(let part of otherParts) {
+				part.randomize(childComplexity);
+			}
+		}
 	}
 
 	public clone(): Part {
@@ -84,15 +218,9 @@ class Part {
 		if(div.type == DivisionType.none) {
 			let firstSub = this.parts[0];
 			if(firstSub) {
-				this.charges = firstSub.charges;
-				this.chargeArrangement = firstSub.chargeArrangement;
-				this.chargeCountByRow = firstSub.chargeCountByRow;
-				this.charges.forEach(p => p.parent = this);
-				this.field = firstSub.field;
-				this.division = firstSub.division;
-				this.parts = firstSub.parts;
-				this.line = firstSub.line;
-				this.chargeDegree = firstSub.chargeDegree;
+				let dev = this.device;
+				this.apply(firstSub);
+				this.device = dev;
 			}
 			return;
 		}
@@ -170,23 +298,25 @@ class Field {
 	tinctureSecondary: Tincture;
 	number: number;
 
+	public constructor(part: Partial<Field>) {
+		this.apply(part);
+	}
+
 	public static createPlain(tincture: Tincture|null=null): Field {
-		let field = new Field();
-		field.variation = FieldVariation.plain;
-		field.tincture = tincture ?? Tincture.argent;
-		field.tinctureSecondary = Tincture.argent;
-		field.number = 8;
-		field.variationLine = DivisionLine.straight;
+		let field = new Field({ tincture: tincture ?? undefined });
 		return field;
 	}
 
+	private apply(field: Partial<Field>) {
+		this.variation = field.variation ?? FieldVariation.plain;
+		this.tincture = field.tincture ?? Tincture.argent;
+		this.tinctureSecondary = field.tinctureSecondary ?? Tincture.argent;
+		this.number = field.number ?? 8;
+		this.variationLine = field.variationLine ?? DivisionLine.straight;
+	}
+
 	public clone(): Field {
-		let field = new Field();
-		field.variation = this.variation;
-		field.tincture = this.tincture;
-		field.tinctureSecondary = this.tinctureSecondary;
-		field.number = this.number;
-		field.variationLine = this.variationLine;
+		let field = new Field(this);
 		return field;
 	}
 
@@ -236,7 +366,7 @@ enum DeviceId {
 	heater,
 	sub,
 	bend, bendSinister, fess, pale, chevron, chevronReversed, canton, quarter, chief, base, cross, saltire,
-	roundel, lozenge, mullet, heart,
+	roundel, annulet, lozenge, mascle, mullet, heart, escutcheon, crescent, billet, tower, crown, key, trefoil
 }
 
 const DEVICE: Map<DeviceId, Device> = (() => {
@@ -260,9 +390,18 @@ const DEVICE: Map<DeviceId, Device> = (() => {
 		{ id: DeviceId.saltire, type: DeviceType.ordinary },
 
 		{ id: DeviceId.roundel, type: DeviceType.mobileCharge },
+		{ id: DeviceId.annulet, type: DeviceType.mobileCharge },
 		{ id: DeviceId.lozenge, type: DeviceType.mobileCharge },
+		{ id: DeviceId.mascle, type: DeviceType.mobileCharge },
 		{ id: DeviceId.mullet, type: DeviceType.mobileCharge },
 		{ id: DeviceId.heart, type: DeviceType.mobileCharge },
+		{ id: DeviceId.escutcheon, type: DeviceType.mobileCharge },
+		{ id: DeviceId.crescent, type: DeviceType.mobileCharge },
+		{ id: DeviceId.billet, type: DeviceType.mobileCharge },
+		{ id: DeviceId.tower, type: DeviceType.mobileCharge },
+		{ id: DeviceId.crown, type: DeviceType.mobileCharge },
+		{ id: DeviceId.key, type: DeviceType.mobileCharge },
+		{ id: DeviceId.trefoil, type: DeviceType.mobileCharge },
 	];
 	for(let device of devices) {
 		map.set(device.id, device);

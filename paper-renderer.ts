@@ -23,7 +23,7 @@ const colorMap = new Map([
 
 function getPathForPart(part: Part, box: paper.Rectangle): paper.Path {
 	const dev = part.device;
-	let path = null;
+	let path: paper.Path|null = null;
 	switch(dev.id) {
 		case DeviceId.heater:
 			path = new paper.Path([
@@ -36,6 +36,7 @@ function getPathForPart(part: Part, box: paper.Rectangle): paper.Path {
 			path.closePath();
 			break;
 		case DeviceId.lozenge:
+		case DeviceId.mascle:
 			let halfWidth = box.height * .4;
 			path = new paper.Path([
 				new paper.Point(box.center.x, box.point.y),
@@ -44,6 +45,11 @@ function getPathForPart(part: Part, box: paper.Rectangle): paper.Path {
 				new paper.Point(box.center.x + halfWidth, box.center.y),
 			]);
 			path.closePath();
+			if(dev.id == DeviceId.mascle) {
+				let hole = path.clone();
+				hole.scale(.6);
+				path = path.subtract(hole) as paper.Path;
+			}
 			break;
 		case DeviceId.mullet:
 			const pointCount = part.chargeDegree;
@@ -97,8 +103,44 @@ function getPathForPart(part: Part, box: paper.Rectangle): paper.Path {
 			]);
 			path.closePath();
 			break;
+		case DeviceId.crescent:
+			let circle = new paper.Path.Circle(box.center, box.width/2);
+			let miniCircle = new paper.Path.Circle(new paper.Point(box.center.x, box.center.y - box.height*.2), box.width*.35);
+			path = circle.subtract(miniCircle) as paper.Path;
+			break;
+		case DeviceId.billet:
+			path = new paper.Path.Rectangle(new paper.Rectangle(new paper.Point(0,0), new paper.Size(20, 40)));
+			break;
+		case DeviceId.escutcheon:
+			let root = part;
+			while(root.parent) {
+				root = root.parent;
+			}
+			return getPathForPart(root, box);
+		case DeviceId.tower:
+			path = (new paper.Path('M 75 150 L 100 150 L 100 175 L 125 175 L 125 150 L 150 150 L 150 175 L 175 175 L 175 150 L 200 150 L 200 175 L 225 175 L 225 150 L 250 150 L 250 200 L 75 200 L 75 150 Z')
+				.unite(new paper.Path('M 200 412.5 C 200 391.79 183.211 375 162.5 375 C 141.79 375 125 391.79 125 412.5 L 125 440.744 L 50 440.744 L 50 400 C 100 350 100 260 100 260 L 79.628 209.256 L 245.372 209.256 L 225 260 C 224.981 259.98 225 350 275 400 L 275 440.744 L 200 440.744 L 200 412.5 Z'))
+				.unite(new paper.Path('M 275 475 L 200 475 L 200 450 L 275 450 L 275 475 Z'))
+				.unite(new paper.Path('M 125 475 L 50 475 L 50 450 L 125 450 L 125 475 Z'))
+				.subtract(new paper.Path('M 150 272.5 L 150 310 L 175 310 L 175 272.5 C 175 265.596 169.404 260 162.5 260 C 155.596 260 150 265.596 150 272.5 Z'))
+			) as paper.Path;
+			break;
+		case DeviceId.crown:
+			path = new paper.Path('M 25 300 C 25.011 299.988 75 325 68.35 357.799 C 67.502 360.719 67.048 363.807 67.048 367 C 67.048 385.187 81.782 399.933 99.964 399.952 L 100 400 L 100.024 399.952 C 118.212 399.939 132.952 385.191 132.952 367 C 132.952 359.59 130.506 352.75 126.377 347.246 C 125 325 149.972 274.793 150 275 C 150.187 274.447 175 325 173.623 347.246 C 169.494 352.75 167.048 359.59 167.048 367 C 167.048 385.191 181.788 399.939 199.976 399.952 L 200 400 L 200.036 399.952 C 218.218 399.933 232.952 385.187 232.952 367 C 232.952 363.807 232.498 360.719 231.65 357.799 C 225 325 274.955 299.928 275 300 L 254.894 440.744 L 45.106 440.744 Z').unite(new paper.Path('M 250 475 L 50 475 L 46.429 450 L 253.571 450 Z')) as paper.Path;
+			break;
+		case DeviceId.key:
+			path = (new paper.Path('M 162.5 478 C 162.5 505.614 140.114 528 112.5 528 C 84.886 528 62.5 505.614 62.5 478 C 62.5 454.702 78.435 435.126 100 429.575 L 100 325 L 50 325 L 50 300 L 75 300 L 75 275 L 50 275 L 50 250 L 100 250 L 100 235.642 L 125 235.642 L 125 429.575 C 146.565 435.126 162.5 454.702 162.5 478 Z')
+				.subtract(new paper.Path('M 112.5 453 C 98.693 453 87.5 464.193 87.5 478 C 87.5 491.807 98.693 503 112.5 503 C 126.307 503 137.5 491.807 137.5 478 C 137.5 464.193 126.307 453 112.5 453 Z'))
+			) as paper.Path;
+			break;
+		case DeviceId.trefoil:
+			path = new paper.Path('M 250 461 C 250 467.904 244.404 473.5 237.5 473.5 C 230.596 473.5 225 467.904 225 461 L 230.533 418.95 C 222.096 428.472 209.775 434.474 196.053 434.474 C 170.618 434.474 150 413.855 150 388.421 C 150 362.987 170.618 342.368 196.053 342.368 C 197.183 342.368 198.304 342.409 199.414 342.489 C 194.382 335.108 191.44 326.187 191.44 316.579 C 191.44 291.145 212.058 270.526 237.492 270.526 C 262.927 270.526 283.545 291.145 283.545 316.579 C 283.545 326.187 280.602 335.109 275.569 342.49 C 276.685 342.41 277.811 342.368 278.947 342.368 C 304.382 342.368 325 362.987 325 388.421 C 325 413.855 304.382 434.474 278.947 434.474 C 265.225 434.474 252.904 428.472 244.467 418.95 Z');
+			break;
 		default:
 			path = new paper.Path.Circle(box.center, box.width/2);
+			if(dev.id == DeviceId.annulet) {
+				path = path.subtract(new paper.Path.Circle(box.center, box.width*.3)) as paper.Path;
+			}
 			break;
 	}
 	path?.fitBounds(box);
@@ -167,7 +209,7 @@ function getIntersectionPathForDivision(path: paper.Path, fessPoint: paper.Point
 					dirs.reverse();
 				}
 				lineSegments.push(...dirs.map(dir => new paper.Segment(
-					new paper.Point(dir * inc * params.orth, workingY + .5*inc)
+					new paper.Point(fessPoint.x + dir * inc * params.orth, workingY + .5*inc)
 				)));
 			} else if([DivisionLine.indented, DivisionLine.wavy].includes(division.line)) {
 				let x = fessPoint.x + (i%2 == 0 ? -1 : 1) * inc * params.orth;
@@ -283,8 +325,8 @@ function dividePath(path: paper.Path, division: Division, fessPoint: paper.Point
 			}
 			let result = [
 				path.intersect(topRightAngleLine),
-				path.intersect(paleIntersection).subtract(topRightAngleLine).subtract(bottomRightAngleLine),
-				path.subtract(paleIntersection).subtract(topRightAngleLine).subtract(bottomRightAngleLine),
+				path.subtract(topRightAngleLine).subtract(bottomRightAngleLine).intersect(paleIntersection),
+				path.subtract(topRightAngleLine).subtract(bottomRightAngleLine).subtract(paleIntersection),
 				path.intersect(bottomRightAngleLine),
 			] as paper.Path[];
 			if(division.type == DivisionType.quarterly) {
@@ -345,8 +387,6 @@ function calcShieldPart(
 			return paths;
 		}
 		paths.push(...part.parts.flatMap((p, i) => calcShieldPart(p, subdivisions[i], targetPart, fessPoint)));
-		// let lines = dividePath(path, part.division, fessPointAbsolute, true);
-		// paths.push(...lines.flatMap(line => ({path:line.pathData, color:'grey', line:true})));
 	} else {
 		if(!targetPart || part == targetPart) {
 			let applyTincture = (tincturedPath: paper.Path, tincture: Tincture) => {
@@ -661,7 +701,7 @@ function calcShieldPart(
 			for(let [lineIdx, line] of lines.entries()) {
 				let chargeCount = chargesPerLine[lineIdx];
 				let chargeSeparation = line.length / (chargeCount+1);
-				if(chargeSeparation < minChargeSeparation) {
+				if(chargeCount && chargeSeparation < minChargeSeparation) {
 					minChargeSeparation = chargeSeparation;
 				}
 				for(let i=0; i<chargeCount; i++) {
@@ -674,12 +714,16 @@ function calcShieldPart(
 			}
 			let chargeSize = minChargeSeparation * .9;
 			// ensure charges are (probably) not too big for available space
-			for(let i=0; i<3; i++) {
-				let idx = Math.floor((chargePositions.length*i)/3);
+			let sampleCount = Math.min(3, chargePositions.length);
+			for(let i=0; i<sampleCount; i++) {
+				let idx = i;
+				if(chargePositions.length > 3) {
+					idx = Math.floor((chargePositions.length*i)/3);
+				}
 				let pos = chargePositions[idx];
 				let lengths = [DivisionType.fess, DivisionType.pale, DivisionType.bend, DivisionType.bendSinister].map(
 					div => dividePath(path, new Division(div, DivisionLine.straight), pos, true).pop()
-				).filter(n => n).map(l => l!.length * .6);
+				).map(l => l?.length ?? 0 * .6).filter(n => n > 1);
 				chargeSize = Math.min(chargeSize, ...lengths);
 			}
 			// create charge paths
