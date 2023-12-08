@@ -1,22 +1,15 @@
-- Random arms
-	- Rule of tincture
-- Multi-tincture charges
-	- Common
-		- Sword
-	- Beasts
-		- Lion
-		- Eagle
+- Beasts
+	- New Charges
 		- Unicorn
 		- Stag
 		- Wolf
-		- Griffon
+		- Dragon
 		- Bear
 - More shield shapes
 - Blazons
-- Counter-embattled line where appropriate
 - Charge orientation
 	- On a bend, charges are bendwise
-- Display for multi-charge editor shows all charges
+- Counter-embattled line where appropriate
 - More Ordinaries
 	- Bordure
 	- Pile (Reversed)

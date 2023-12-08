@@ -9,7 +9,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "paper": "^0.12.17"
+    "paper": "^0.12.17",
+    "paperjs-offset": "^1.0.8"
   },
   "devDependencies": {
     "typescript": "^5.1.6"
