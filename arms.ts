@@ -19,15 +19,15 @@ class Part {
 	private apply(part: Partial<Part>) {
 		this.parent = part.parent ?? null;
 		this.device = part.device ?? DEVICE.get(DeviceId.heater)!;
-		this.attitudes = part.attitudes ?? [];
-		this.field = part.field ?? Field.createPlain();
-		this.featureTinctures = part.featureTinctures ?? [];
-		this.charges = part.charges ?? [];
+		this.attitudes = [...(part.attitudes ?? [])];
+		this.field = part.field ? new Field(part.field) : Field.createPlain();
+		this.featureTinctures = [...(part.featureTinctures ?? [])];
+		this.charges = (part.charges ?? []).map(c => new Part(c));
 		this.charges.forEach(c => c.parent = this);
 		this.chargeArrangement = part.chargeArrangement ?? ChargeArrangement.unspecified;
-		this.chargeCountByRow = part.chargeCountByRow ?? [this.charges.length];
+		this.chargeCountByRow = [...(part.chargeCountByRow ?? [this.charges.length])];
 		this.division = part.division ?? new Division(DivisionType.none, DivisionLine.straight);
-		this.parts = part.parts ?? [];
+		this.parts = (part.parts ?? []).map(p => new Part(p));
 		this.line = part.line ?? DivisionLine.straight;
 		this.chargeDegree = part.chargeDegree ?? (this.device.id == DeviceId.mullet ? 5 : 1);
 		this.updateDevice(this.device);
@@ -156,7 +156,7 @@ class Part {
 						count++;
 					}
 					for(let i=0; i<count; i++) {
-						this.addCharge(charge.clone());
+						this.addCharge(new Part(charge));
 					}
 				}
 			}
@@ -188,16 +188,6 @@ class Part {
 		}
 	}
 
-	public clone(): Part {
-		let part = new Part(this);
-		part.field = this.field.clone();
-		part.charges = this.charges.map(c => c.clone());
-		part.chargeCountByRow = [...this.chargeCountByRow];
-		part.parts = this.parts.map(p => p.clone());
-		part.division = this.division.clone();
-		return part;
-	}
-
 	public equals(other: Part): boolean {
 		let childEquivalences = [[this.charges,other.charges], [this.parts,other.parts]].map(pair => {
 			if(pair[0].length != pair[1].length) {
@@ -225,6 +215,9 @@ class Part {
 	}
 
 	public updateDevice(newDevice: Device) {
+		if(this.device.id == newDevice.id) {
+			return;
+		}
 		this.device = newDevice;
 		let featureCount = this.device.children?.length ?? 0;
 		while(this.featureTinctures.length > featureCount) {
@@ -261,10 +254,10 @@ class Part {
 	public updateMobileChargeNumber(charge: Part, number: number) {
 		let newCharges = [];
 		while(newCharges.length < number) {
-			newCharges.push(charge.clone());
+			newCharges.push(new Part(charge));
 		}
-		this.charges = [];
 		const charges = this.charges;
+		this.charges = [];
 		let groupIndex = charges.findIndex(c => c.equals(charge));
 		let precedingCharges = charges.filter((c,i) => i < groupIndex);
 		let followingCharges = charges.filter((c,i) => i > groupIndex && !c.equals(charge));
@@ -294,13 +287,26 @@ class Part {
 			desiredPartCount = 4;
 		}
 		while(this.parts.length < desiredPartCount) {
-			let newPart = new Part(this.parts.length ? {} : this.clone());
+			let newPart = new Part(this.parts.length ? {} : new Part(this));
 			newPart.parent = this;
 			newPart.device = DEVICE.get(DeviceId.sub)!;
 			this.parts.push(newPart);
 		}
 		this.division = div;
 		this.charges = [];
+	}
+
+	public groupCharges(): Part[][] {
+		let chargeGroups: Part[][] = [];
+		for(let charge of this.charges) {
+			let latestGroup = chargeGroups[chargeGroups.length-1];
+			if(latestGroup && latestGroup[0].equals(charge)) {
+				latestGroup.push(charge);
+			} else {
+				chargeGroups.push([charge]);
+			}
+		}
+		return chargeGroups;
 	}
 }
 
@@ -336,10 +342,6 @@ class Division {
 
 	public equals(other: Division): boolean {
 		return this.type == other.type && this.line == other.line;
-	}
-
-	public clone(): Division {
-		return new Division(this.type, this.line);
 	}
 }
 
@@ -378,11 +380,6 @@ class Field {
 		this.tinctureSecondary = field.tinctureSecondary ?? Tincture.argent;
 		this.number = field.number ?? 8;
 		this.variationLine = field.variationLine ?? DivisionLine.straight;
-	}
-
-	public clone(): Field {
-		let field = new Field(this);
-		return field;
 	}
 
 	public equals(other: Field): boolean {
@@ -439,6 +436,9 @@ enum Attitude {
 	rising,
 	elevated,
 	lowered,
+	segreant,
+	trippant,
+	forcene,
 }
 
 class Device {
@@ -458,18 +458,27 @@ enum DeviceType {
 }
 
 enum DeviceId {
-	heater,
+	heater, kite, iberian, french, english, swiss, dutch, cartouche, lozengeEscutcheon, banner,
 	sub,
 	bend, bendSinister, fess, pale, chevron, chevronReversed, canton, quarter, chief, base, cross, saltire,
 	roundel, annulet, lozenge, mascle, mullet, heart, escutcheon, crescent, billet, tower, crown, key, trefoil, sword,
-	hilted, langued, armed,
-	lion, eagle, griffin
+	lion, eagle, stag, hind, griffin, unicorn,
+	hilted, langued, armed, unguled, crined,
 }
 
 const DEVICE: Map<DeviceId, Device> = (() => {
 	let map = new Map();
 	let devices: Device[] = [
 		{ id: DeviceId.heater, type: DeviceType.escutcheon },
+		{ id: DeviceId.kite, type: DeviceType.escutcheon },
+		{ id: DeviceId.iberian, type: DeviceType.escutcheon },
+		{ id: DeviceId.french, type: DeviceType.escutcheon },
+		{ id: DeviceId.english, type: DeviceType.escutcheon },
+		{ id: DeviceId.swiss, type: DeviceType.escutcheon },
+		{ id: DeviceId.dutch, type: DeviceType.escutcheon },
+		{ id: DeviceId.cartouche, type: DeviceType.escutcheon },
+		{ id: DeviceId.lozengeEscutcheon, type: DeviceType.escutcheon },
+		{ id: DeviceId.banner, type: DeviceType.escutcheon },
 
 		{ id: DeviceId.sub, type: DeviceType.subdivision },
 
@@ -523,15 +532,48 @@ const DEVICE: Map<DeviceId, Device> = (() => {
 				{ id:AttitudeSetId.birdWingDirection, options:[Attitude.elevated, Attitude.lowered] },
 			],
 		},
+		{ id: DeviceId.stag, type: DeviceType.beast,
+			children:[
+				{ id: DeviceId.langued, type: DeviceType.feature },
+				{ id: DeviceId.armed, type: DeviceType.feature },
+				{ id: DeviceId.unguled, type: DeviceType.feature },
+			],
+			attitudeSets: [
+				{ id:AttitudeSetId.beastBody, options:[Attitude.forcene, Attitude.trippant, Attitude.none] },
+				{ id:AttitudeSetId.beastHead, options:[Attitude.default, Attitude.regardant, Attitude.guardant] },
+			],
+		},
+		{ id: DeviceId.hind, type: DeviceType.beast,
+			children:[
+				{ id: DeviceId.langued, type: DeviceType.feature },
+				{ id: DeviceId.unguled, type: DeviceType.feature },
+			],
+			attitudeSets: [
+				{ id:AttitudeSetId.beastBody, options:[Attitude.forcene, Attitude.trippant, Attitude.none] },
+				{ id:AttitudeSetId.beastHead, options:[Attitude.default, Attitude.regardant, Attitude.guardant] },
+			],
+		},
 		{ id: DeviceId.griffin, type: DeviceType.beast,
 			children:[
 				{ id: DeviceId.langued, type: DeviceType.feature },
 				{ id: DeviceId.armed, type: DeviceType.feature },
 			],
 			attitudeSets: [
-				{ id:AttitudeSetId.beastBody, options:[Attitude.rampant, Attitude.passant, Attitude.none] },
+				{ id:AttitudeSetId.beastBody, options:[Attitude.segreant, Attitude.passant, Attitude.none] },
 				{ id:AttitudeSetId.beastHead, options:[Attitude.default, Attitude.regardant] },
 				{ id:AttitudeSetId.birdWingDirection, options:[Attitude.elevated, Attitude.lowered] },
+			],
+		},
+		{ id: DeviceId.unicorn, type: DeviceType.beast,
+			children:[
+				{ id: DeviceId.langued, type: DeviceType.feature },
+				{ id: DeviceId.crined, type: DeviceType.feature },
+				{ id: DeviceId.armed, type: DeviceType.feature },
+				{ id: DeviceId.unguled, type: DeviceType.feature },
+			],
+			attitudeSets: [
+				{ id:AttitudeSetId.beastBody, options:[Attitude.forcene, Attitude.trippant, Attitude.none] },
+				{ id:AttitudeSetId.beastHead, options:[Attitude.default, Attitude.regardant] },
 			],
 		},
 	];

@@ -9,7 +9,7 @@
 	<style>
 		* {
 			box-sizing: border-box;
-			color: inherit;
+			color: #0007;
 		}
 		select, input {
 			background-color: unset;
@@ -27,14 +27,21 @@
 </head>
 <body style="margin:0; background-color:grey; display:flex; height:100vh;">
 	<div style="width:20em; padding:3em .7em; background-color:wheat; box-shadow:0 0 1em black; z-index:1;">
-		<div id="shield-holder" style="margin-bottom:1em;"></div>
+		<div id="shield-holder"></div>
+		<div style="font-weight:bold;">Blazon:</div>
+		<div id="blazon-holder" style="background-color: #0003; color:black; max-height:30vh; padding:1em; overflow-y:auto;"></div>
+		<br>
 		<button id="randomButton" onclick="randomize()">Randomize</button>
+		<br>
+		<br>
+		<a id="download-link"><button id="exportButton" onclick="exportSVG()">Download SVG</button></a>
 	</div>
 	<div id="editor" style="width:0; flex-grow:1; margin-left:-1.5em; padding-bottom:1em; overflow:auto;"></div>
 	<script src="node_modules/paper/dist/paper-core.min.js"></script>
 	<script src="node_modules/paperjs-offset/dist/paperjs-offset.min.js"></script>
 	<script> paperOffset = PaperOffset; </script>
 	<script src="js/arms.js"></script>
+	<script src="js/blazon.js"></script>
 	<script src="js/paper-renderer.js"></script>
 	<script src="js/main.js"></script>
 </body>

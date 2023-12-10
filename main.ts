@@ -63,8 +63,8 @@ class EditorUIState {
 
 	constructor(part: Part, additionalCollapsedParts: Part[]|null) {
 		this.part = part;
-		this.inProgressField = part.field.clone();
-		this.inProgressDivision = part.division.clone();
+		this.inProgressField = new Field(part.field);
+		this.inProgressDivision = new Division(part.division.type, part.division.line);
 		this.selectedChargeClassIndex = [
 			DeviceType.ordinary, DeviceType.mobileCharge, DeviceType.beast
 		].indexOf(part.device.type);
@@ -78,24 +78,11 @@ class ShieldUpdate {
 	func?: (data: EditorUIState, el:HTMLElement) => boolean;
 }
 
-function groupCharges(charges: Part[]): Part[][] {
-	let chargeGroups: Part[][] = [];
-	for(let charge of charges) {
-		let latestGroup = chargeGroups[chargeGroups.length-1];
-		if(latestGroup && latestGroup[0].equals(charge)) {
-			latestGroup.push(charge);
-		} else {
-			chargeGroups.push([charge]);
-		}
-	}
-	return chargeGroups;
-}
-
 function getEditor(part: Part, collapsed: Part[]|null=null): HTMLElement {
 	let shieldSvg = inflate(getSvg(calcShieldElements(shield, [part, ...(collapsed ?? [])])));
 	shieldSvg.setAttribute('viewBox', '-55 -55 110 110');
 	let editor = inflate(`
-		<div class="part-editor" style="padding-left:3em; color:#0007;">
+		<div class="part-editor" style="padding-left:3em;">
 			<div style="background-color:wheat; padding:.5em; margin-top:1em; box-shadow:0 0 1em black; display:inline-flex;">
 				<div style="display:flex; flex-direction:column; margin-right:.25em; font-size:1.6em;">
 					<i class="fas fa-chevron-circle-up move-button" style="margin-bottom:.1em;"></i>
@@ -132,7 +119,7 @@ function getEditor(part: Part, collapsed: Part[]|null=null): HTMLElement {
 			event.target?.dispatchEvent(createUpdateEvent({
 				func: (ui, el) => {
 					let direction = i ? 1 : -1;
-					let chargeGroups = groupCharges(ui.part.parent!.charges);
+					let chargeGroups = ui.part.parent!.groupCharges();
 					let currentIdx = chargeGroups.findIndex(g => g.includes(ui.part));
 					let currentGroup = chargeGroups[currentIdx];
 					chargeGroups[currentIdx] = chargeGroups[currentIdx + direction];
@@ -143,6 +130,31 @@ function getEditor(part: Part, collapsed: Part[]|null=null): HTMLElement {
 			}));
 		}
 	});
+	// add update listener
+	editor.addEventListener('shield-update', (event: CustomEvent<ShieldUpdate>) => {
+		let el = event.currentTarget as HTMLElement;
+		let state = (el as any).arms as EditorUIState;
+		if(event.detail.func) {
+			let needsFullUpdate = event.detail.func(state, el);
+			if(!needsFullUpdate) {
+				updateSingleEditor(el, state);
+				event.stopPropagation();
+			} else {
+				event.detail.func = () => true;
+				if(state.additionalCollapsedParts?.length) {
+					state.additionalCollapsedParts.forEach(p => {
+						if(state.part.parent) {
+							state.part.parent.charges[state.part.parent.charges.indexOf(p)] = new Part(state.part);
+						}
+					});
+				}
+				window.setTimeout(updateShield, 0);
+				if(state.part == shield) {
+					updateEditor(el, state.part);
+				}
+			}
+		}
+	});
 	// update & add children
 	let ui = new EditorUIState(part, collapsed);
 	updateSingleEditor(editor, ui);
@@ -151,7 +163,7 @@ function getEditor(part: Part, collapsed: Part[]|null=null): HTMLElement {
 	for(let subdivision of part.parts) {
 		editor.appendChild(getEditor(subdivision));
 	}
-	let chargeGroups = groupCharges(part.charges);
+	let chargeGroups = part.groupCharges();
 	for(let group of chargeGroups) {
 		let charge = group.shift()!;
 		editor.appendChild(getEditor(charge, group));
@@ -233,18 +245,25 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 					<label>Per:</label>
 					<select class="division-type-select">
 					${[
-						'None', 'Pale', 'Fess', 'Bend', 'Bend Sinister',
-						'Chevron', 'Chevron Reversed', 'Quarterly', 'Saltire',
-					].map((label, idx) => `
-						<option value="${idx}"${uiState.inProgressDivision.type == idx ? ' selected' : ''}>${label}</option>
+						DivisionType.none, DivisionType.pale, DivisionType.fess, DivisionType.bend, DivisionType.bendSinister,
+						DivisionType.chevron, DivisionType.chevronReversed, DivisionType.quarterly, DivisionType.saltire,
+					].map(div => `
+						<option value="${div}"${uiState.inProgressDivision.type == div ? ' selected' : ''}>
+							${divisionNames.get(div)}
+						</option>
 					`).join('\n')}
 					</select>
 				`,
 				...(uiState.inProgressDivision.type != DivisionType.none ? [`
 					<label>Line:</label>
 					<select class="division-line-select">
-					${['Straight', 'Indented', 'Wavy', 'Embattled', 'Engrailed', 'Invected'].map((label, idx) => `
-						<option value="${idx}"${uiState.inProgressDivision.line == idx ? ' selected' : ''}>${label}</option>
+					${[
+						DivisionLine.straight, DivisionLine.indented, DivisionLine.wavy,
+						DivisionLine.embattled, DivisionLine.engrailed, DivisionLine.invected,
+					].map(line => `
+						<option value="${line}"${uiState.inProgressDivision.line == line ? ' selected' : ''}>
+							${lineNames.get(line)}
+						</option>
 					`).join('\n')}
 					</select>
 				`] : []),
@@ -270,19 +289,6 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 			[AttitudeSetId.birdWingPosition, 'Wings'],
 			[AttitudeSetId.birdWingDirection, 'Wing Motion'],
 		]);
-		const attitudeLabelMap = new Map([
-			[Attitude.rampant, 'Rampant'],
-			[Attitude.passant, 'Passant'],
-			[Attitude.none, 'None'],
-			[Attitude.default, 'Standard'],
-			[Attitude.guardant, 'Guardant'],
-			[Attitude.regardant, 'Regardant'],
-			[Attitude.displayed, 'Displayed'],
-			[Attitude.addorsed, 'Addorsed'],
-			[Attitude.rising, 'Rising'],
-			[Attitude.elevated, 'Elevated'],
-			[Attitude.lowered, 'Lowered'],
-		]);
 		sections.unshift({
 			title: 'Attitude', buttonText: 'Change',
 			buttonFunc: (event:MouseEvent) => {
@@ -302,7 +308,7 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 					<select class="attitude-select">
 					${set.options.map(attitudeId => `
 						<option value="${attitudeId}"${uiState.part.attitudes[setIdx] == attitudeId ? ' selected' : ''}>
-							${attitudeLabelMap.get(attitudeId)}
+							${attitudeNames.get(attitudeId)}
 						</option>
 					`).join('\n')}
 				</select>
@@ -311,54 +317,27 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 		});
 	}
 	// device / escutcheon section
-	let labelMap = new Map<DeviceId, string>([
-		[DeviceId.heater, 'Heater'],
-		[DeviceId.bend, 'Bend'],
-		[DeviceId.bendSinister, 'Bend Sinister'],
-		[DeviceId.fess, 'Fess'],
-		[DeviceId.pale, 'Pale'],
-		[DeviceId.chevron, 'Chevron'],
-		[DeviceId.chevronReversed, 'Chevron Reversed'],
-		[DeviceId.chief, 'Chief'],
-		[DeviceId.base, 'Base'],
-		[DeviceId.canton, 'Canton'],
-		[DeviceId.quarter, 'Quarter'],
-		[DeviceId.cross, 'Cross'],
-		[DeviceId.saltire, 'Saltire'],
-		[DeviceId.roundel, 'Roundel'],
-		[DeviceId.annulet, 'Annulet'],
-		[DeviceId.lozenge, 'Lozenge'],
-		[DeviceId.mascle, 'Mascle'],
-		[DeviceId.mullet, 'Mullet'],
-		[DeviceId.heart, 'Heart'],
-		[DeviceId.escutcheon, 'Escutcheon'],
-		[DeviceId.crescent, 'Crescent'],
-		[DeviceId.billet, 'Billet'],
-		[DeviceId.tower, 'Tower'],
-		[DeviceId.crown, 'Crown'],
-		[DeviceId.key, 'Key'],
-		[DeviceId.trefoil, 'Trefoil'],
-		[DeviceId.sword, 'Sword'],
-		[DeviceId.hilted, 'Hilted'],
-		[DeviceId.lion, 'Lion'],
-		[DeviceId.armed, 'Armed'],
-		[DeviceId.langued, 'Langued'],
-		[DeviceId.eagle, 'Eagle'],
-		[DeviceId.griffin, 'Griffin'],
-	]);
 	let deviceArray = [...DEVICE.values()];
 	if(uiState.part.device.type == DeviceType.escutcheon) {
 		let escutcheons = deviceArray.filter(d => d.type == DeviceType.escutcheon);
 		sections.unshift({
 			title: 'Escutcheon', buttonText: 'Change',
-			buttonFunc: (event:MouseEvent) => {},
+			buttonFunc: (event:MouseEvent) => {
+				event.target?.dispatchEvent(createUpdateEvent({
+					func: (ui, el) => {
+						let selector = el.querySelector('.escutcheon-type-select') as HTMLSelectElement;
+						ui.part.updateDevice(DEVICE.get(parseInt(selector.value))!);
+						return true;
+					},
+				}));
+			},
 			contentRows: [
 				`
 					<label>Type:</label>
 					<select class="escutcheon-type-select">
 					${escutcheons.map(device => `
 						<option value="${device.id}"${uiState.part.device.id == device.id ? ' selected' : ''}>
-							${labelMap.get(device.id)}
+							${deviceNames.get(device.id)}
 						</option>
 					`).join('\n')}
 					</select>
@@ -405,11 +384,11 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 					<select class="charge-select">
 					${chargesOfSameType.map(charge => `
 						<option value="${charge.id}"${uiState.selectedCharge == charge.id ? ' selected' : ''}>
-							${labelMap.get(charge.id)}
+							${deviceNames.get(charge.id)}
 						</option>
 					`).join('\n')}
 					</select>
-					${uiState.selectedCharge == DeviceId.mullet ? `
+					${uiState.selectedChargeClassIndex == 1 && uiState.selectedCharge == DeviceId.mullet ? `
 						of
 						<input class="degree-number-input" type="number" style="width:2.5em;"
 							min="5" value="${Math.max(5, uiState.part.chargeDegree)}"
@@ -424,8 +403,11 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 				` : `
 					<label>Line:</label>
 					<select class="line-select">
-					${['Straight', 'Indented', 'Wavy', 'Embattled', 'Engrailed', 'Invected'].map((label, idx) => `
-						<option value="${idx}"${uiState.part.line == idx ? ' selected' : ''}>${label}</option>
+					${[
+						DivisionLine.straight, DivisionLine.indented, DivisionLine.wavy,
+						DivisionLine.embattled, DivisionLine.engrailed, DivisionLine.invected,
+					].map(div => `
+						<option value="${div}"${uiState.part.line == div ? ' selected' : ''}>${lineNames.get(div)}</option>
 					`).join('\n')}
 					</select>
 				`,
@@ -453,8 +435,23 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 		});
 	}
 	// features section
-	let tinctureOptions = ['Or', 'Argent', 'Azure', 'Gules', 'Sable', 'Vert', 'Purpure', 'Ermine', 'Vair'];
+	let tinctureOptions = [
+		Tincture.or, Tincture.argent, Tincture.azure, Tincture.gules, Tincture.sable,
+		Tincture.vert, Tincture.purpure, Tincture.ermine, Tincture.vair,
+	];
 	if(uiState.part.device.children?.length) {
+		let featuresByRow: Device[][] = [[], [], []];
+		let overflowCount = uiState.part.device.children.length - 3;
+		let toAssign = [...uiState.part.device.children];
+		while(toAssign.length) {
+			let rowIdx = featuresByRow.findIndex(r => !r.length);
+			let row = featuresByRow[rowIdx];
+			row.push(toAssign.shift()!);
+			if(overflowCount > 2 - rowIdx) {
+				row.push(toAssign.shift()!);
+				overflowCount--;
+			}
+		}
 		sections.push({
 			title: 'Charge Features', buttonText: 'Tint',
 			buttonFunc: (event:MouseEvent) => {
@@ -469,19 +466,18 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 					},
 				}));
 			},
-			contentRows: uiState.part.device.children.map((feature, featureIdx) => `
-				<label>${labelMap.get(feature.id)}:</label>
-					<select class="feature-tincture-select">
-					${tinctureOptions.map((label, idx) => `
-						<option value="${idx}"${
-							(uiState.part.featureTinctures[featureIdx] ?? uiState.part.field.tincture) == idx ?
-							' selected' : ''
-						}>
-							${label}
-						</option>
+			contentRows: featuresByRow.map(features => features.map(feature => `
+				<label>${deviceNames.get(feature.id)}:</label>
+					<select class="feature-tincture-select"${features.length > 1 ? ' style="width:3.6em;"' : ''}>
+					${tinctureOptions.map(t => `
+						<option value="${t}"${
+							(uiState.part.featureTinctures[uiState.part.device.children!.indexOf(feature)] ??
+								uiState.part.field.tincture
+							) == t ? ' selected' : ''
+						}>${tinctureNames.get(t)}</option>
 					`).join('\n')}
 				</select>
-			`),
+			`).join('\n')),
 			setUpListeners: (el: HTMLElement) => {},
 		});
 	}
@@ -503,23 +499,28 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 				`
 					<label>Variation:</label>
 					<select class="field-variation-select">
-					${['Plain', 'Barry', 'Paly', 'Bendy', 'Bendy Sinister', 'Chequy', 'Lozengy'].map((label, idx) => `
-						<option value="${idx}"${workingField.variation == idx ? ' selected' : ''}>${label}</option>
+					${[
+						FieldVariation.plain, FieldVariation.barry, FieldVariation.paly, FieldVariation.bendy,
+						FieldVariation.bendySinister, FieldVariation.chequy, FieldVariation.lozengy,
+					].map(v => `
+						<option value="${v}"${workingField.variation == v ? ' selected' : ''}>
+							${fieldVariationNames.get(v)}
+						</option>
 					`).join('\n')}
 					</select>
 				`,
 				`
 					<label>Tincture${nonPlain ? 's' : ''}:</label>
 					<select class="field-tincture-select">
-					${tinctureOptions.map((label, idx) => `
-						<option value="${idx}"${workingField.tincture == idx ? ' selected' : ''}>${label}</option>
+					${tinctureOptions.map(t => `
+						<option value="${t}"${workingField.tincture == t ? ' selected' : ''}>${tinctureNames.get(t)}</option>
 					`).join('\n')}
 					</select>
 					${nonPlain ? `
 						<select class="field-tincture-secondary-select">
-						${tinctureOptions.map((label, idx) => `
-							<option value="${idx}"${workingField.tinctureSecondary == idx ? ' selected' : ''}>
-								${label}
+						${tinctureOptions.map(t => `
+							<option value="${t}"${workingField.tinctureSecondary == t ? ' selected' : ''}>
+								${tinctureNames.get(t)}
 							</option>
 						`).join('\n')}
 						</select>
@@ -533,8 +534,12 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 					${![FieldVariation.chequy, FieldVariation.lozengy].includes(workingField.variation) ? `
 						<label>Line:</label>
 						<select class="field-line-select">
-						${['Straight', 'Indented', 'Wavy', 'Embattled'].map((label, idx) => `
-							<option value="${idx}"${workingField.variationLine == idx ? ' selected' : ''}>${label}</option>
+						${[
+							DivisionLine.straight, DivisionLine.indented, DivisionLine.wavy, DivisionLine.embattled,
+						].map(line => `
+							<option value="${line}"${workingField.variationLine == line ? ' selected' : ''}>
+								${lineNames.get(line)}
+							</option>
 						`).join('\n')}
 						</select>
 					` : ''}
@@ -552,7 +557,7 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 			},
 		});
 	}
-	if(uiState.part.charges.filter(c => c.device.type == DeviceType.mobileCharge).length > 1) {
+	if(uiState.part.charges.filter(c => [DeviceType.mobileCharge, DeviceType.beast].includes(c.device.type)).length > 1) {
 		sections.push({
 			title: 'Charge Arrangement', buttonText: 'Arrange',
 			buttonFunc: (event:MouseEvent) => {
@@ -571,10 +576,14 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 					<label>Arrangement:</label>
 					<select class="arrangement-select">
 					${[
-						'Default', 'Per Row', 'Bendwise', 'Bendwise Sinister',
-						'Chevronwise', 'Chevronwise Reversed', 'Crosswise', 'Fesswise', 'Palewise', 'Saltirewise',
-					].map((label, idx) => `
-						<option value="${idx}"${uiState.selectedChargeArrangement == idx ? ' selected' : ''}>${label}</option>
+						ChargeArrangement.unspecified, ChargeArrangement.specified, ChargeArrangement.bendwise,
+						ChargeArrangement.bendwiseSinister, ChargeArrangement.chevronwise,
+						ChargeArrangement.chevronwiseReversed, ChargeArrangement.crosswise, ChargeArrangement.fesswise,
+						ChargeArrangement.palewise, ChargeArrangement.saltirewise,
+					].map(arr => `
+						<option value="${arr}"${uiState.selectedChargeArrangement == arr ? ' selected' : ''}>
+							${arrangementNames.get(arr)}
+						</option>
 					`).join('\n')}
 					</select>
 				`,
@@ -620,30 +629,6 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 		section.setUpListeners(el);
 		row.appendChild(el);
 	}
-	editor.addEventListener('shield-update', (event: CustomEvent<ShieldUpdate>) => {
-		let el = event.currentTarget as HTMLElement;
-		let state = (el as any).arms as EditorUIState;
-		if(event.detail.func) {
-			let needsFullUpdate = event.detail.func(state, el);
-			if(!needsFullUpdate) {
-				updateSingleEditor(el, state);
-				event.stopPropagation();
-			} else {
-				event.detail.func = () => true;
-				if(state.additionalCollapsedParts?.length) {
-					state.additionalCollapsedParts.forEach(p => {
-						if(state.part.parent) {
-							state.part.parent.charges[state.part.parent.charges.indexOf(p)] = state.part.clone();
-						}
-					});
-				}
-				window.setTimeout(updateShield, 0);
-				if(state.part == shield) {
-					updateEditor(el, state.part);
-				}
-			}
-		}
-	});
 }
 
 function updateEditor(editor: HTMLElement, part: Part) {
@@ -663,6 +648,8 @@ function updateShield() {
 		holder.removeChild(holder.children[0]);
 	}
 	holder.appendChild(svg);
+	let blazon = document.getElementById('blazon-holder')!;
+	blazon.innerText = blazonPart(shield);
 }
 
 function randomize() {
@@ -671,16 +658,29 @@ function randomize() {
 	updateEditor(mainEditor, shield);
 }
 
+function exportSVG() {
+	let svgText = document.getElementById('shield-holder')!.innerHTML;
+	let link = document.getElementById('download-link')! as HTMLAnchorElement;
+	link.href = window.URL.createObjectURL(new Blob([svgText], { type:'image/svg+xml' }));
+	link.download = 'coat-of-arms.svg';
+}
+
 let shield = new Part({ device: DEVICE.get(DeviceId.heater)! });
 shield.field = Field.createPlain(Tincture.azure);
 // shield.divide(new Division(DivisionType.chevron, DivisionLine.straight));
-let charge = new Part({ device: DEVICE.get(DeviceId.griffin) });
+let charge = new Part({ device: DEVICE.get(DeviceId.roundel) });
 charge.field = Field.createPlain(Tincture.or);
-charge.featureTinctures = [ Tincture.gules, Tincture.argent ];
-charge.attitudes[0] = Attitude.passant;
-charge.attitudes[1] = Attitude.default;
-charge.attitudes[2] = Attitude.lowered;
+// charge.featureTinctures = [ Tincture.gules, Tincture.argent ];
+// charge.attitudes[0] = Attitude.trippant;
+// charge.attitudes[1] = Attitude.default;
+shield.updateChargeArrangement(ChargeArrangement.chevronwise);
 shield.addCharge(charge);
+shield.addCharge(new Part(charge));
+shield.addCharge(new Part(charge));
+shield.addCharge(new Part(charge));
+shield.addCharge(new Part(charge));
+shield.addCharge(new Part(charge));
+shield.addCharge(new Part(charge));
 updateShield();
 let mainEditor = getEditor(shield);
 document.getElementById('editor')?.appendChild(mainEditor);
