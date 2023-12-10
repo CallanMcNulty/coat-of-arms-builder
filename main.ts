@@ -60,6 +60,7 @@ class EditorUIState {
 	selectedCharge: number;
 	selectedChargeArrangement: number;
 	additionalCollapsedParts: Part[]|null = null;
+	updatedEditorIndex: number|null = null;
 
 	constructor(part: Part, additionalCollapsedParts: Part[]|null) {
 		this.part = part;
@@ -326,7 +327,10 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 				event.target?.dispatchEvent(createUpdateEvent({
 					func: (ui, el) => {
 						let selector = el.querySelector('.escutcheon-type-select') as HTMLSelectElement;
-						ui.part.updateDevice(DEVICE.get(parseInt(selector.value))!);
+						let deviceId = parseInt(selector.value);
+						if(ui.part.device.id != deviceId) {
+							ui.part.updateDevice(DEVICE.get(deviceId)!);
+						}
 						return true;
 					},
 				}));
@@ -358,14 +362,14 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 				event.target?.dispatchEvent(createUpdateEvent({
 					func: (ui, el) => {
 						let chargeSelect = el.querySelector('.charge-select') as HTMLSelectElement;
-						ui.part.updateDevice(DEVICE.get(parseInt(chargeSelect.value))!);
+						let deviceId = parseInt(chargeSelect.value);
 						let lineSelect = el.querySelector('.line-select') as HTMLSelectElement;
 						ui.part.line = lineSelect ? parseInt(lineSelect.value) : DivisionLine.straight;
 						let degreeNumberInput = el.querySelector('.degree-number-input') as HTMLInputElement;
 						ui.part.chargeDegree = degreeNumberInput ? parseInt(degreeNumberInput.value) : 1;
 						let numberInput = el.querySelector('.device-number-input') as HTMLInputElement;
 						let number = numberInput ? parseInt(numberInput.value) : 1;
-						ui.part.parent!.updateMobileChargeNumber(ui.part, number);
+						ui.part.parent!.updateMobileChargeGroupDeviceAndNumber(ui.part, DEVICE.get(deviceId)!, number);
 						return true;
 					},
 				}));
@@ -576,10 +580,10 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 					<label>Arrangement:</label>
 					<select class="arrangement-select">
 					${[
-						ChargeArrangement.unspecified, ChargeArrangement.specified, ChargeArrangement.bendwise,
-						ChargeArrangement.bendwiseSinister, ChargeArrangement.chevronwise,
-						ChargeArrangement.chevronwiseReversed, ChargeArrangement.crosswise, ChargeArrangement.fesswise,
-						ChargeArrangement.palewise, ChargeArrangement.saltirewise,
+						ChargeArrangement.unspecified, ChargeArrangement.specified, ChargeArrangement.inBend,
+						ChargeArrangement.inBendSinister, ChargeArrangement.inChevron,
+						ChargeArrangement.inChevronReversed, ChargeArrangement.inCross, ChargeArrangement.inFess,
+						ChargeArrangement.inPale, ChargeArrangement.inSaltire,
 					].map(arr => `
 						<option value="${arr}"${uiState.selectedChargeArrangement == arr ? ' selected' : ''}>
 							${arrangementNames.get(arr)}
@@ -609,6 +613,7 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 	}
 	// add sections to document
 	for(let section of sections) {
+		let idx = sections.indexOf(section);
 		let el = inflate(`
 			<div class="editor-section" style="
 				width:16em; text-align:center; border:.1em solid;
@@ -622,10 +627,25 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 						<div style="margin:.16em 0;">${contentRow}</div>
 					`).join('\n')}
 				</div>
-				<button>${section.buttonText}</button>
+				<button disabled>${section.buttonText}</button>
 			</div>
 		`);
-		el.querySelector('button')!.onclick = section.buttonFunc;
+		let btn = el.querySelector('button')!;
+		btn.onclick = e => {
+			uiState.updatedEditorIndex = null;
+			section.buttonFunc(e);
+		};
+		const updateForEditing = () => {
+			btn.removeAttribute('disabled');
+			el.style.borderStyle = 'dashed';
+			uiState.updatedEditorIndex = idx;
+		};
+		if(uiState.updatedEditorIndex == idx) {
+			updateForEditing();
+		}
+		[...el.querySelectorAll('select'),...el.querySelectorAll('input')]
+			.forEach(pt => pt.addEventListener('input', updateForEditing))
+		;
 		section.setUpListeners(el);
 		row.appendChild(el);
 	}
@@ -673,8 +693,9 @@ charge.field = Field.createPlain(Tincture.or);
 // charge.featureTinctures = [ Tincture.gules, Tincture.argent ];
 // charge.attitudes[0] = Attitude.trippant;
 // charge.attitudes[1] = Attitude.default;
-shield.updateChargeArrangement(ChargeArrangement.chevronwise);
+shield.updateChargeArrangement(ChargeArrangement.inCross);
 shield.addCharge(charge);
+shield.addCharge(new Part(charge));
 shield.addCharge(new Part(charge));
 shield.addCharge(new Part(charge));
 shield.addCharge(new Part(charge));

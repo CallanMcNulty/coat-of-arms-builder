@@ -1,14 +1,6 @@
-- Fix bugs
-	- charge arrangements that meet in the middle overlap
-- Proper tinctures
-- Randomization
-	- Support beasts
-	- Better color picking
-- UI indicates when editor is not saved
-
 - New Charges
 	- Dragon
-	- Wolf
+	- Wolf / Fox
 	- Bear
 - Charge orientation
 	- On a bend, charges are bendwise
@@ -19,5 +11,6 @@
 	- Pall
 	- Etc.
 - Special charge positioning relative to one another (beasts wearing crowns, standing on clouds, etc.)
+- Countercharging
 - UI for expanding same device charges
 - UI for collapsing other parts

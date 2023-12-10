@@ -80,14 +80,14 @@ const divisionNames = new Map([
 const arrangementNames = new Map([
 	[ChargeArrangement.unspecified, 'Default'],
 	[ChargeArrangement.specified, 'Per Row'],
-	[ChargeArrangement.bendwise, 'In Bend'],
-	[ChargeArrangement.bendwiseSinister, 'In Bend Sinister'],
-	[ChargeArrangement.chevronwise, 'In Chevron'],
-	[ChargeArrangement.chevronwiseReversed, 'In Chevron Reversed'],
-	[ChargeArrangement.crosswise, 'In Cross'],
-	[ChargeArrangement.fesswise, 'In Fess'],
-	[ChargeArrangement.palewise, 'In Pale'],
-	[ChargeArrangement.saltirewise, 'In Saltire'],
+	[ChargeArrangement.inBend, 'In Bend'],
+	[ChargeArrangement.inBendSinister, 'In Bend Sinister'],
+	[ChargeArrangement.inChevron, 'In Chevron'],
+	[ChargeArrangement.inChevronReversed, 'In Chevron Reversed'],
+	[ChargeArrangement.inCross, 'In Cross'],
+	[ChargeArrangement.inFess, 'In Fess'],
+	[ChargeArrangement.inPale, 'In Pale'],
+	[ChargeArrangement.inSaltire, 'In Saltire'],
 ])
 
 const lineNames = new Map([
@@ -123,14 +123,28 @@ const fieldVariationNames = new Map([
 
 function blazonPart(part: Part): string {
 	let manyParts = part.parts.length > 2;
-	let partBlazons = part.parts.map((child, i) => 
-		`${manyParts ? ['I','II','III','IV'][i]+'. ' : ''} ${blazonPart(child)}`
+	let partGroups: {idx:number, part:Part}[][] = [];
+	for(let p of part.parts) {
+		let group = partGroups.find(g => g[0].part.equals(p));
+		let item = { idx: part.parts.indexOf(p), part: p };
+		if(!group) {
+			partGroups.push([item]);
+		} else {
+			group.push(item);
+		}
+	}
+	const numerals = ['I','II','III','IV'];
+	let partBlazons = partGroups.map(group => 
+		`${(manyParts || group.length) ? group.map(p => numerals[p.idx]).join(' and ')+'. ' : ''} ${blazonPart(group[0].part)}`
 	).join(manyParts ? '; ' : ' and ');
 	let blazon = `${part.division.type != DivisionType.none ? blazonDivision(part.division)+' '+partBlazons : blazonField(part.field)}`;
 	// charges
 	if(part.charges.length) {
 		let chargeGroups = part.groupCharges();
-		blazon += `, ${![DeviceType.escutcheon, DeviceType.subdivision].includes(part.device.type) ? 'charged with ' : ''}${chargeGroups.map(g => {
+		blazon += `, ${part.parts.length ? 'overall ' : ''}${
+			![DeviceType.escutcheon, DeviceType.subdivision].includes(part.device.type) ? 'charged with ' : ''
+		}`;
+		blazon += chargeGroups.map(g => {
 			let charge = g[0];
 			// name and number
 			let name = deviceNames.get(charge.device.id)!;
@@ -202,7 +216,7 @@ function blazonPart(part: Part): string {
 			}
 			// full charge
 			return `${name}${fullAttitude} ${blazonPart(charge)}${features ? ', '+features : ''}`;
-		}).join(' and ')}`;
+		}).join(' and ')
 		// charge arrangement
 		if(part.charges.filter(c => [DeviceType.mobileCharge, DeviceType.beast].includes(c.device.type)).length > 1) {
 			let arrangement = '';
@@ -240,7 +254,8 @@ function blazonField(field: Field): string {
 		return tincture;
 	} else {
 		let numberText = `of ${field.number}${field.variation == FieldVariation.chequy ? ' columns' : (field.variation == FieldVariation.lozengy ? ' tracts' : '')}`;
-		let lineText = field.variationLine != DivisionLine.straight ? lineNames.get(field.variationLine)!.toLowerCase()+' ' : '';
+		let includeLine = field.variationLine != DivisionLine.straight && [FieldVariation.chequy, FieldVariation.lozengy].includes(field.variation);
+		let lineText = includeLine ? lineNames.get(field.variationLine)!.toLowerCase()+' ' : '';
 		return `${fieldVariationNames.get(field.variation)} ${lineText}${numberText}, ${tincture} and ${tinctureNames.get(field.tinctureSecondary)}`;
 	}
 }

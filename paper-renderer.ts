@@ -540,8 +540,8 @@ function getPathForPart(part: Part, box: paper.Rectangle): paper.Path[] {
 		}
 		case DeviceId.unicorn: {
 			let unguled: paper.Path|null = null;
-			let mane = (new paper.Path('M 235.035 133.615 C 235.035 133.615 229.23 104.603 251.832 100 C 251.832 100 248.238 114.249 259.772 116.199 C 265.06 100 294.404 104.281 313.209 112.499 C 308.042 115.461 304.537 120.355 302.16 125.633 C 292.729 125.352 283.78 127.546 275.358 137.323 C 275.328 137.311 275.298 137.3 275.268 137.288 C 267.656 134.332 252.705 136.939 238.028 142.056 L 235.035 133.615 Z')
-				.unite(new paper.Path('M 345.312 161.504 L 330.765 175.52 C 350.064 171.79 357.383 182.531 358.121 195.627 C 348.152 190.805 333.118 195.805 336.849 209.568 C 341.678 227.381 361.443 218.011 361.443 218.011 C 361.443 218.011 368.746 238.015 339.791 240.342 C 350.871 247.677 354.796 261.179 354.796 261.179 C 354.796 261.179 343.964 272.812 329.787 268.101 C 351.059 286.255 332.232 291.611 354.553 300 C 340.505 315.441 318.723 310.418 303.658 294.556 C 305.455 266.24 321.48 221.784 294.912 156.793 C 308.257 157.262 318.677 151.467 326.083 144.986 C 333.451 146.619 340.607 151.234 345.312 161.504 Z'))
+			let mane = (new paper.Path('M 236.376 137.396 C 249.964 132.8 264.401 130.248 273.678 131.795 L 274.141 131.487 C 284.032 122.293 294.752 120.145 304.788 120.762 C 306.935 117.437 309.686 114.519 313.209 112.499 C 294.404 104.281 265.06 100 259.772 116.199 C 248.238 114.249 251.832 100 251.832 100 C 229.23 104.603 235.035 133.615 235.035 133.615 L 236.376 137.396 Z')
+				.unite(new paper.Path('M 331.506 146.798 C 323.722 154.257 314.668 159.53 302.018 161.309 C 317.383 202.841 316.385 234.965 313.02 261.596 C 311.053 277.16 308.222 289.305 307.982 298.657 C 322.671 311.17 341.799 314.018 354.553 300 C 332.232 291.611 351.059 286.255 329.787 268.101 C 343.964 272.812 354.796 261.179 354.796 261.179 C 354.796 261.179 350.871 247.677 339.791 240.342 C 368.746 238.015 361.443 218.011 361.443 218.011 C 361.443 218.011 341.678 227.381 336.849 209.568 C 333.118 195.805 348.152 190.805 358.121 195.627 C 357.383 182.531 350.064 171.79 330.765 175.52 L 345.312 161.504 C 341.777 153.788 336.858 149.264 331.506 146.798 Z'))
 			) as paper.Path;
 			let horn = new paper.Path('M 182.52 53.559 L 243.792 140.182 C 238.177 141.875 232.455 143.997 227.058 146.375 Z');
 			let [main, langued, armed, crined] = getDeerHeadForAttitude(part.attitudes[1], [horn, mane]);
@@ -800,7 +800,11 @@ function dividePath(path: paper.Path, division: Division, fessPoint: paper.Point
 			rightAngleLine.scale(1,-1,anglePoint);
 		}
 		if(!line) {
-			return [path.intersect(rightAngleLine), path.subtract(rightAngleLine)] as paper.Path[];
+			let result = [path.intersect(rightAngleLine), path.subtract(rightAngleLine)] as paper.Path[];
+			if(!reversed) {
+				result.reverse();
+			}
+			return result;
 		} else {
 			rightAngleLine.scale(-1,1,anglePoint);
 			let paleIntersection = getIntersectionPathForDivision(
@@ -1001,7 +1005,7 @@ function calcShieldPart(
 			let distributedCharges = chargesPerLineInfo.reduce((acc,curr) => curr.actual + acc, 0);
 			let toDistribute = totalSections - distributedCharges;
 			if( // for symmetric cross arrangements, try to remain symmetric
-				targetArrangement == ChargeArrangement.crosswise &&
+				targetArrangement == ChargeArrangement.inCross &&
 				chargesPerLineInfo[0].actual == chargesPerLineInfo[1].actual
 			) {
 				if(toDistribute % 2 == 0) {
@@ -1021,14 +1025,14 @@ function calcShieldPart(
 			return lineSet.map(l => chargesPerLineInfo.find(i => i.line == l)!.actual - 1);
 		};
 		let ordinaryArrangementMap = new Map([
-			[DeviceId.fess, ChargeArrangement.fesswise],
-			[DeviceId.pale, ChargeArrangement.palewise],
-			[DeviceId.bend, ChargeArrangement.bendwise],
-			[DeviceId.bendSinister, ChargeArrangement.bendwiseSinister],
-			[DeviceId.chevron, ChargeArrangement.chevronwise],
-			[DeviceId.chevronReversed, ChargeArrangement.chevronwiseReversed],
-			[DeviceId.saltire, ChargeArrangement.saltirewise],
-			[DeviceId.cross, ChargeArrangement.crosswise],
+			[DeviceId.fess, ChargeArrangement.inFess],
+			[DeviceId.pale, ChargeArrangement.inPale],
+			[DeviceId.bend, ChargeArrangement.inBend],
+			[DeviceId.bendSinister, ChargeArrangement.inBendSinister],
+			[DeviceId.chevron, ChargeArrangement.inChevron],
+			[DeviceId.chevronReversed, ChargeArrangement.inChevronReversed],
+			[DeviceId.saltire, ChargeArrangement.inSaltire],
+			[DeviceId.cross, ChargeArrangement.inCross],
 		]);
 		let targetArrangement = part.chargeArrangement;
 		let targetMidPoint = fessPoint;
@@ -1087,28 +1091,28 @@ function calcShieldPart(
 				}
 				break;
 			}
-			case ChargeArrangement.fesswise:
+			case ChargeArrangement.inFess:
 				lines = dividePath(path, new Division(DivisionType.fess, DivisionLine.straight), targetMidPoint, true);
 				break;
-			case ChargeArrangement.palewise:
+			case ChargeArrangement.inPale:
 				lines = dividePath(path, new Division(DivisionType.pale, DivisionLine.straight), targetMidPoint, true);
 				break;
-			case ChargeArrangement.bendwise:
+			case ChargeArrangement.inBend:
 				lines = dividePath(path, new Division(DivisionType.bend, DivisionLine.straight), targetMidPoint, true);
 				break;
-			case ChargeArrangement.bendwiseSinister:
+			case ChargeArrangement.inBendSinister:
 				lines = dividePath(path, new Division(DivisionType.bendSinister, DivisionLine.straight), targetMidPoint, true);
 				break;
-			case ChargeArrangement.chevronwise:
+			case ChargeArrangement.inChevron:
 				lines = dividePath(path, new Division(DivisionType.chevron, DivisionLine.straight), targetMidPoint, true);
 				break;
-			case ChargeArrangement.chevronwiseReversed:
+			case ChargeArrangement.inChevronReversed:
 				lines = dividePath(path, new Division(DivisionType.chevronReversed, DivisionLine.straight), targetMidPoint, true);
 				break;
-			case ChargeArrangement.crosswise:
+			case ChargeArrangement.inCross:
 				lines = dividePath(path, new Division(DivisionType.quarterly, DivisionLine.straight), targetMidPoint, true);
 				break;
-			case ChargeArrangement.saltirewise:
+			case ChargeArrangement.inSaltire:
 				lines = dividePath(path, new Division(DivisionType.saltire, DivisionLine.straight), targetMidPoint, true);
 				break;
 		}
@@ -1134,11 +1138,10 @@ function calcShieldPart(
 				let dist = ['x','y'].map(c => Math.abs((a as any)[c] - (b as any)[c]) < .0001);
 				return dist[0] && dist[1]
 			};
+			const crossArrangement = targetArrangement == ChargeArrangement.inCross && mobileCharges.length != 1;
 			if(chargesPerLine.length < lines.length) {
 				// check for a center point
-				if(mobileCharges.length % 2 == 1 &&
-					(mobileCharges.length == 1 || targetArrangement != ChargeArrangement.crosswise)
-				) {
+				if(mobileCharges.length % 2 == 1 || crossArrangement) {
 					let endpoints = lines.flatMap(l => [l.segments[0], l.segments[l.segments.length-1]].map(s => s.point));
 					let endpointCounts: {ep:paper.Point, count:number}[] = [];
 					for(let endpoint of endpoints) {
@@ -1154,17 +1157,27 @@ function calcShieldPart(
 						centerPosition = greatestCount.ep;
 					}
 				}
-				chargesPerLine = distributeCharges(mobileCharges.length, lines, centerPosition ? 1 : 0);
+				chargesPerLine = distributeCharges(
+					mobileCharges.length, lines, (centerPosition && !crossArrangement) ? 1 : 0
+				);
 			}
 			// calculate positions
+			const accountForCenter = centerPosition;
+			if(crossArrangement) {
+				centerPosition = null;
+			}
 			for(let [lineIdx, line] of lines.entries()) {
 				let chargeCount = chargesPerLine[lineIdx];
-				let chargeSeparation = line.length / chargeCount;
+				let centerPointIdx = -1;
+				if(accountForCenter) {
+					centerPointIdx = line.segments.findIndex(s => pointEq(s.point, accountForCenter));
+				}
+				let chargeSeparation = line.length / (chargeCount + (centerPointIdx > -1 ? .5 : 0));
 				if(chargeCount && chargeSeparation < minChargeSeparation) {
 					minChargeSeparation = chargeSeparation;
 				}
 				for(let i=0; i<chargeCount; i++) {
-					chargePositions.push(line.getPointAt(chargeSeparation * (i+.5)));
+					chargePositions.push(line.getPointAt(chargeSeparation * (i+.5+(centerPointIdx == 0 ? .5 : 0))));
 				}
 				if(centerPosition && pointEq(centerPosition, line.segments[line.segments.length-1].point)) {
 					chargePositions.push(centerPosition);

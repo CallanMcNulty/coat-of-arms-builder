@@ -20,7 +20,7 @@ class Part {
 		this.parent = part.parent ?? null;
 		this.device = part.device ?? DEVICE.get(DeviceId.heater)!;
 		this.attitudes = [...(part.attitudes ?? [])];
-		this.field = part.field ? new Field(part.field) : Field.createPlain();
+		this.field = part.field ? new Field(part.field) : Field.createPlain(part.device?.properTincture);
 		this.featureTinctures = [...(part.featureTinctures ?? [])];
 		this.charges = (part.charges ?? []).map(c => new Part(c));
 		this.charges.forEach(c => c.parent = this);
@@ -35,39 +35,74 @@ class Part {
 
 	public randomize(degree: number) {
 		let complexity = degree;
-		let disallowedTinctures: Tincture[] = [];
+		let parentTinctures: Tincture[] = [];
+		let sameTypeTinctures: Tincture[] = [];
 		let metals = [Tincture.or, Tincture.argent];
 		let colors = [Tincture.azure, Tincture.gules, Tincture.sable, Tincture.vert, Tincture.purpure];
 		let furs = [Tincture.ermine, Tincture.vair];
 		let parent = this.parent;
-		disallowedTinctures = [];
 		while(parent) {
-			let potentiallyClashingCharges = this.device.type == DeviceType.ordinary ? parent.charges : [];
-			disallowedTinctures.push(...[parent, ...parent.parts, ...potentiallyClashingCharges].flatMap(p => {
+			let parentParts = [...parent.parts.filter(p => p != this)];
+			if(!parentParts.length) {
+				parentParts.push(parent);
+			}
+			let potentiallyClashing = this.device.type == DeviceType.ordinary ? parent.charges.filter(c => c != this) : [];
+			parentParts.push(...potentiallyClashing);
+			parentTinctures.push(...parentParts.flatMap(p => {
 				let tinctures = [p.field.tincture];
 				if(p.field.variation != FieldVariation.plain) {
 					tinctures.push(p.field.tinctureSecondary);
 				}
+				if(furs.includes(p.field.tincture)) {
+					if(p.field.tincture == Tincture.vair) {
+						tinctures.push(Tincture.azure, Tincture.argent);
+					} else {
+						tinctures.push(Tincture.sable, Tincture.argent);
+					}
+				}
 				return tinctures;
 			}));
-			if(metals.includes(parent.field.tincture)) {
-				disallowedTinctures.push(...metals);
-			} else if(colors.includes(parent.field.tincture)) {
-				disallowedTinctures.push(...colors);
-			} else if(furs.includes(parent.field.tincture)) {
-				disallowedTinctures.push(...furs, Tincture.argent);
-				if(parent.field.tincture == Tincture.vair) {
-					disallowedTinctures.push(...furs, Tincture.azure);
+			if(!parent.parts.length) {
+				if(metals.includes(parent.field.tincture)) {
+					sameTypeTinctures = metals;
+				} else if(colors.includes(parent.field.tincture)) {
+					sameTypeTinctures = colors;
 				}
 			}
 			parent = parent.parent;
 		}
+		let disallowedTinctures = [...shuffleArray(parentTinctures), ...shuffleArray(sameTypeTinctures)];
 		let baseTinctures = shuffleArray([...metals, ...colors]).filter(t => !disallowedTinctures.includes(t));
-		let field = Field.createPlain(baseTinctures.pop() ?? randomFromArray([...colors, ...metals]));
+		let field = Field.createPlain(baseTinctures.pop() ?? disallowedTinctures.pop());
 		this.apply({field:field, parent:this.parent, device:this.device});
+		// handle extra feature colors
+		if(this.device.children) {
+			let featureColor = null;
+			for(let ti in this.featureTinctures) {
+				let currentTincture = this.featureTinctures[ti]!;
+				if(parentTinctures.includes(currentTincture)) {
+					if(featureColor == null) {
+						let possibleTinctures = shuffleArray([...metals, ...colors]).filter(t => !parentTinctures.includes(t));
+						featureColor = possibleTinctures.pop() ?? field.tincture;
+					}
+					this.featureTinctures[ti] = featureColor;
+				}
+			}
+		}
+		// attitude
+		for(let attitudeIdx in this.attitudes) {
+			let set = this.device.attitudeSets![attitudeIdx];
+			if(Math.random() < .4) {
+				this.attitudes[attitudeIdx] = randomFromArray(set.options);
+			}
+		}
+		if(this.device.id == DeviceId.eagle && this.attitudes[0] == Attitude.displayed) {
+			this.attitudes[1] = Attitude.displayed; // don't allow displayed body, addorsed wings
+		}
 		if(complexity <= 0) {
 			return;
 		}
+		// add complexity
 		let features = [
 			{ feature: 'charge', cost:1, subFeatures:[
 				{ feature: 'ordinary', cost:1, subFeatures:[
@@ -76,36 +111,55 @@ class Part {
 				]},
 				{ feature: 'multiCharge', cost:1, subFeatures:[] },
 				{ feature: 'complexMobileCharge', cost:4, subFeatures:[] },
+				{ feature: 'beast', cost:1, subFeatures:[] },
 			]},
-			{ feature: 'field', cost:1, subFeatures:[
+			{ feature: 'field', cost:0, subFeatures:[
 				{ feature: 'fur', cost:2, subFeatures:[] },
-				{ feature: 'fieldVariation', cost:1, subFeatures:[
+				{ feature: 'fieldVariation', cost:2, subFeatures:[
 					{ feature: 'fieldVariationWithLine', cost:1, subFeatures:[] },
 					{ feature: 'complexFieldVariation', cost:2, subFeatures:[] },
 				]},
 			]},
 			{ feature: 'division', cost:3, subFeatures:[
-				{ feature: 'divisionWithLine', cost:1, subFeatures:[] },
+				{ feature: 'divisionWithLine', cost:2, subFeatures:[] },
 				{ feature: '4PartDivision', cost:2, subFeatures:[] },
 			]},
 		];
 		let selectedFeatures: string[] = [];
 		while(complexity && selectedFeatures.length < 4) {
-			features = shuffleArray(features.filter(f => f.cost <= complexity));
+			features = shuffleArray(features.filter(f => !(
+				f.cost > complexity
+				|| (selectedFeatures.includes('division') && !['divisionWithLine', '4PartDivision'].includes(f.feature))
+				|| ((selectedFeatures.includes('fur') || selectedFeatures.includes('fieldVariation')) &&
+					['fur', 'fieldVariation'].includes(f.feature)
+				)
+				|| (f.feature == 'division' && this.device.type == DeviceType.subdivision)
+				|| (f.feature == 'ordinary' && this.device.type == DeviceType.ordinary)
+				|| ((this.parent?.division.type == DivisionType.chevron && this.parent?.parts.indexOf(this) == 0) ||
+					(this.parent?.division.type == DivisionType.chevronReversed && this.parent?.parts.indexOf(this) == 1)
+				)
+			)));
 			let selected = features.pop();
 			if(selected) {
 				complexity -= selected.cost;
 				if(selected.subFeatures.length) {
 					features.push(...selected.subFeatures);
 				}
-				selectedFeatures.push(selected.feature);
+				if(selected?.feature == 'division') {
+					selectedFeatures = [selected.feature];
+					if(Math.random() < .5) {
+						break;
+					}
+				} else {
+					selectedFeatures.push(selected.feature);
+				}
 			} else {
 				break;
 			}
 		}
 		if(selectedFeatures.includes('field')) {
 			if(selectedFeatures.includes('fur')) {
-				let allowedFurs = furs.filter(f => !disallowedTinctures.includes(f));
+				let allowedFurs = furs.filter(f => !parentTinctures.includes(f));
 				if(allowedFurs.length) {
 					this.field.tincture = randomFromArray(allowedFurs);
 				}
@@ -120,8 +174,8 @@ class Part {
 					]);
 				}
 				this.field.variation = variation;
-				this.field.number = randomInt(3, 15);
-				this.field.tinctureSecondary = baseTinctures.pop() ?? randomFromArray([...colors, ...metals]);
+				this.field.number = randomInt(4, 13);
+				this.field.tinctureSecondary = baseTinctures.pop() ?? sameTypeTinctures.pop() ?? Tincture.argent;
 				if(selectedFeatures.includes('fieldVariationWithLine')) {
 					this.field.variationLine = randomFromArray([
 						DivisionLine.embattled, DivisionLine.indented, DivisionLine.wavy
@@ -130,8 +184,15 @@ class Part {
 			}
 		}
 		if(selectedFeatures.includes('charge')) {
-			if(selectedFeatures.includes('ordinary')) {
-				let ordinaryDevice = randomFromArray([...DEVICE.values()].filter(d => d.type == DeviceType.ordinary));
+			if(selectedFeatures.includes('beast')) {
+				let beast = new Part({device: randomFromArray([...DEVICE.values()].filter(d => d.type == DeviceType.beast))});
+				this.addCharge(beast);
+				beast.randomize(0);
+			} else if(selectedFeatures.includes('ordinary')) {
+				const disallowedOrdinaries = [DeviceId.chief, DeviceId.base, DeviceId.canton, DeviceId.quarter];
+				let ordinaryDevice = randomFromArray([...DEVICE.values()]
+					.filter(d => d.type == DeviceType.ordinary && !disallowedOrdinaries.includes(d.id)))
+				;
 				let line = undefined;
 				if(selectedFeatures.includes('ordinaryWithLine')) {
 					line = randomFromArray([
@@ -141,17 +202,25 @@ class Part {
 				}
 				let ordinary = new Part({device: ordinaryDevice, line: line});
 				this.addCharge(ordinary);
-				ordinary.randomize(selectedFeatures.includes('complexOrdinary') ? 2 : 0);
+				ordinary.randomize(selectedFeatures.includes('complexOrdinary') ? 3 : 0);
 			} else {
-				let mobileDevice = randomFromArray([...DEVICE.values()].filter(d => d.type == DeviceType.mobileCharge));
+				let complex = selectedFeatures.includes('complexMobileCharge');
+				let mobileDevice = randomFromArray([...DEVICE.values()].filter(d => {
+					if(d.type != DeviceType.mobileCharge) {
+						return false;
+					}
+					return !(complex &&
+						![DeviceId.billet,DeviceId.escutcheon,DeviceId.heart,DeviceId.lozenge,DeviceId.roundel].includes(d.id)
+					);
+				}));
 				let charge = new Part({device: mobileDevice});
 				this.addCharge(charge);
-				charge.randomize(selectedFeatures.includes('complexMobileCharge') ? 2 : 0);
+				charge.randomize(complex ? 3 : 0);
 				if(mobileDevice.id == DeviceId.mullet) {
 					charge.chargeDegree = randomInt(5, 9);
 				}
 				if(selectedFeatures.includes('multiCharge')) {
-					let count = randomInt(1, 9);
+					let count = randomInt(1, 7);
 					if(count >= 3 && count%2 == 0) {
 						count++;
 					}
@@ -179,11 +248,16 @@ class Part {
 				]);
 			}
 			this.divide(division);
-			let childComplexity = Math.floor(degree / this.parts.length);
-			let otherParts = [...this.parts];
-			otherParts.shift();
-			for(let part of otherParts) {
-				part.randomize(childComplexity);
+			for(let partIdx=0; partIdx<(type == DivisionType.saltire ? 3 : 2); partIdx++) {
+				this.parts[partIdx].randomize(2);
+			}
+			if(this.parts.length > 2) {
+				this.parts[2].apply(this.parts[1]);
+				if(type == DivisionType.quarterly && Math.random() < .5) {
+					this.parts[3].apply(this.parts[0]);
+				} else {
+					this.parts[3].randomize(2);
+				}
 			}
 		}
 	}
@@ -215,18 +289,15 @@ class Part {
 	}
 
 	public updateDevice(newDevice: Device) {
-		if(this.device.id == newDevice.id) {
-			return;
-		}
 		this.device = newDevice;
 		let featureCount = this.device.children?.length ?? 0;
 		while(this.featureTinctures.length > featureCount) {
 			this.featureTinctures.pop();
 		}
 		while(this.featureTinctures.length < featureCount) {
-			this.featureTinctures.push(null);
+			this.featureTinctures.push(this.device.children![this.featureTinctures.length].properTincture ?? null);
 		}
-		this.attitudes = (newDevice.attitudeSets ?? []).map(set => set.options[0]);
+		this.attitudes = (newDevice.attitudeSets ?? []).map((set,i) => this.attitudes[i] ?? set.options[0]);
 	}
 
 	public updateChargeArrangement(chargeArrangement: ChargeArrangement, chargeCountByRow: number[]=[]) {
@@ -251,16 +322,18 @@ class Part {
 		this.chargeCountByRow = counts;
 	}
 
-	public updateMobileChargeNumber(charge: Part, number: number) {
+	public updateMobileChargeGroupDeviceAndNumber(charge: Part, device: Device, number: number) {
+		let groupIndex = this.charges.findIndex(c => c.equals(charge));
+		let precedingCharges = this.charges.slice(0,groupIndex);
+		let followingCharges = this.charges.slice(this.charges.findLastIndex(c => c.equals(charge)) + 1);
+		if(charge.device != device) {
+			charge.updateDevice(device);
+		}
 		let newCharges = [];
 		while(newCharges.length < number) {
 			newCharges.push(new Part(charge));
 		}
-		const charges = this.charges;
 		this.charges = [];
-		let groupIndex = charges.findIndex(c => c.equals(charge));
-		let precedingCharges = charges.filter((c,i) => i < groupIndex);
-		let followingCharges = charges.filter((c,i) => i > groupIndex && !c.equals(charge));
 		let allCharges = [...precedingCharges, ...newCharges, ...followingCharges];
 		for(let charge of allCharges) {
 			this.addCharge(charge);
@@ -348,14 +421,14 @@ class Division {
 enum ChargeArrangement {
 	unspecified,
 	specified,
-	bendwise,
-	bendwiseSinister,
-	chevronwise,
-	chevronwiseReversed,
-	crosswise,
-	fesswise,
-	palewise,
-	saltirewise,
+	inBend,
+	inBendSinister,
+	inChevron,
+	inChevronReversed,
+	inCross,
+	inFess,
+	inPale,
+	inSaltire,
 }
 
 class Field {
@@ -444,6 +517,7 @@ enum Attitude {
 class Device {
 	id: DeviceId;
 	type: DeviceType;
+	properTincture?: Tincture;
 	children?: Device[];
 	attitudeSets?: AttitudeSet[];
 }
@@ -468,6 +542,9 @@ enum DeviceId {
 
 const DEVICE: Map<DeviceId, Device> = (() => {
 	let map = new Map();
+	const langued = { id: DeviceId.langued, type: DeviceType.feature, properTincture:Tincture.gules };
+	const armed = { id: DeviceId.armed, type: DeviceType.feature, properTincture:Tincture.argent };
+	const unguled = { id: DeviceId.unguled, type: DeviceType.feature, properTincture:Tincture.argent };
 	let devices: Device[] = [
 		{ id: DeviceId.heater, type: DeviceType.escutcheon },
 		{ id: DeviceId.kite, type: DeviceType.escutcheon },
@@ -482,8 +559,8 @@ const DEVICE: Map<DeviceId, Device> = (() => {
 
 		{ id: DeviceId.sub, type: DeviceType.subdivision },
 
-		{ id: DeviceId.bend, type: DeviceType.ordinary },
-		{ id: DeviceId.bendSinister, type: DeviceType.ordinary },
+		{ id: DeviceId.bend, type: DeviceType.ordinary, properTincture: Tincture.or },
+		{ id: DeviceId.bendSinister, type: DeviceType.ordinary, properTincture: Tincture.or },
 		{ id: DeviceId.fess, type: DeviceType.ordinary },
 		{ id: DeviceId.pale, type: DeviceType.ordinary },
 		{ id: DeviceId.chevron, type: DeviceType.ordinary },
@@ -495,37 +572,31 @@ const DEVICE: Map<DeviceId, Device> = (() => {
 		{ id: DeviceId.cross, type: DeviceType.ordinary },
 		{ id: DeviceId.saltire, type: DeviceType.ordinary },
 
-		{ id: DeviceId.roundel, type: DeviceType.mobileCharge },
+		{ id: DeviceId.roundel, type: DeviceType.mobileCharge, properTincture: Tincture.argent },
 		{ id: DeviceId.annulet, type: DeviceType.mobileCharge },
 		{ id: DeviceId.lozenge, type: DeviceType.mobileCharge },
 		{ id: DeviceId.mascle, type: DeviceType.mobileCharge },
-		{ id: DeviceId.mullet, type: DeviceType.mobileCharge },
-		{ id: DeviceId.heart, type: DeviceType.mobileCharge },
+		{ id: DeviceId.mullet, type: DeviceType.mobileCharge, properTincture: Tincture.or },
+		{ id: DeviceId.heart, type: DeviceType.mobileCharge, properTincture: Tincture.gules },
 		{ id: DeviceId.escutcheon, type: DeviceType.mobileCharge },
-		{ id: DeviceId.crescent, type: DeviceType.mobileCharge },
+		{ id: DeviceId.crescent, type: DeviceType.mobileCharge, properTincture: Tincture.argent },
 		{ id: DeviceId.billet, type: DeviceType.mobileCharge },
 		{ id: DeviceId.tower, type: DeviceType.mobileCharge },
-		{ id: DeviceId.crown, type: DeviceType.mobileCharge },
-		{ id: DeviceId.key, type: DeviceType.mobileCharge },
-		{ id: DeviceId.trefoil, type: DeviceType.mobileCharge },
-		{ id: DeviceId.sword, type: DeviceType.mobileCharge, children:[
-			{ id: DeviceId.hilted, type: DeviceType.feature },
+		{ id: DeviceId.crown, type: DeviceType.mobileCharge, properTincture: Tincture.or },
+		{ id: DeviceId.key, type: DeviceType.mobileCharge, properTincture: Tincture.or },
+		{ id: DeviceId.trefoil, type: DeviceType.mobileCharge, properTincture: Tincture.vert },
+		{ id: DeviceId.sword, type: DeviceType.mobileCharge, properTincture: Tincture.argent, children:[
+			{ id: DeviceId.hilted, type: DeviceType.feature, properTincture: Tincture.or },
 		]},
 		{ id: DeviceId.lion, type: DeviceType.beast,
-			children:[
-				{ id: DeviceId.langued, type: DeviceType.feature },
-				{ id: DeviceId.armed, type: DeviceType.feature },
-			],
+			children:[langued, armed],
 			attitudeSets: [
 				{ id:AttitudeSetId.beastBody, options:[Attitude.rampant, Attitude.passant, Attitude.none] },
 				{ id:AttitudeSetId.beastHead, options:[Attitude.default, Attitude.regardant, Attitude.guardant] },
 			],
 		},
 		{ id: DeviceId.eagle, type: DeviceType.beast,
-			children:[
-				{ id: DeviceId.langued, type: DeviceType.feature },
-				{ id: DeviceId.armed, type: DeviceType.feature },
-			],
+			children:[langued, armed],
 			attitudeSets: [
 				{ id:AttitudeSetId.birdBody, options:[Attitude.displayed, Attitude.rising, Attitude.none] },
 				{ id:AttitudeSetId.birdWingPosition, options:[Attitude.displayed, Attitude.addorsed] },
@@ -533,31 +604,21 @@ const DEVICE: Map<DeviceId, Device> = (() => {
 			],
 		},
 		{ id: DeviceId.stag, type: DeviceType.beast,
-			children:[
-				{ id: DeviceId.langued, type: DeviceType.feature },
-				{ id: DeviceId.armed, type: DeviceType.feature },
-				{ id: DeviceId.unguled, type: DeviceType.feature },
-			],
+			children:[langued, armed, unguled],
 			attitudeSets: [
 				{ id:AttitudeSetId.beastBody, options:[Attitude.forcene, Attitude.trippant, Attitude.none] },
 				{ id:AttitudeSetId.beastHead, options:[Attitude.default, Attitude.regardant, Attitude.guardant] },
 			],
 		},
 		{ id: DeviceId.hind, type: DeviceType.beast,
-			children:[
-				{ id: DeviceId.langued, type: DeviceType.feature },
-				{ id: DeviceId.unguled, type: DeviceType.feature },
-			],
+			children:[langued, unguled],
 			attitudeSets: [
 				{ id:AttitudeSetId.beastBody, options:[Attitude.forcene, Attitude.trippant, Attitude.none] },
 				{ id:AttitudeSetId.beastHead, options:[Attitude.default, Attitude.regardant, Attitude.guardant] },
 			],
 		},
 		{ id: DeviceId.griffin, type: DeviceType.beast,
-			children:[
-				{ id: DeviceId.langued, type: DeviceType.feature },
-				{ id: DeviceId.armed, type: DeviceType.feature },
-			],
+			children:[langued, armed],
 			attitudeSets: [
 				{ id:AttitudeSetId.beastBody, options:[Attitude.segreant, Attitude.passant, Attitude.none] },
 				{ id:AttitudeSetId.beastHead, options:[Attitude.default, Attitude.regardant] },
@@ -565,12 +626,7 @@ const DEVICE: Map<DeviceId, Device> = (() => {
 			],
 		},
 		{ id: DeviceId.unicorn, type: DeviceType.beast,
-			children:[
-				{ id: DeviceId.langued, type: DeviceType.feature },
-				{ id: DeviceId.crined, type: DeviceType.feature },
-				{ id: DeviceId.armed, type: DeviceType.feature },
-				{ id: DeviceId.unguled, type: DeviceType.feature },
-			],
+			children:[langued, { id: DeviceId.crined, type: DeviceType.feature }, armed, unguled],
 			attitudeSets: [
 				{ id:AttitudeSetId.beastBody, options:[Attitude.forcene, Attitude.trippant, Attitude.none] },
 				{ id:AttitudeSetId.beastHead, options:[Attitude.default, Attitude.regardant] },
