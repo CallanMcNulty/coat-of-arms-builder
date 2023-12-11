@@ -11,6 +11,9 @@ class Part {
 	parts: Part[];
 	line: DivisionLine;
 	chargeDegree: number;
+	orientation: Orientation|null;
+	inverted: boolean;
+	reversed: boolean;
 
 	public constructor(part: Partial<Part>) {
 		this.apply(part);
@@ -31,6 +34,9 @@ class Part {
 		this.line = part.line ?? DivisionLine.straight;
 		this.chargeDegree = part.chargeDegree ?? (this.device.id == DeviceId.mullet ? 5 : 1);
 		this.updateDevice(this.device);
+		this.orientation = part.orientation ?? null;
+		this.inverted = part.inverted ?? false;
+		this.reversed = part.reversed ?? false;
 	}
 
 	public randomize(degree: number) {
@@ -136,7 +142,7 @@ class Part {
 				|| (f.feature == 'division' && this.device.type == DeviceType.subdivision)
 				|| (f.feature == 'ordinary' && this.device.type == DeviceType.ordinary)
 				|| ((this.parent?.division.type == DivisionType.chevron && this.parent?.parts.indexOf(this) == 0) ||
-					(this.parent?.division.type == DivisionType.chevronReversed && this.parent?.parts.indexOf(this) == 1)
+					(this.parent?.division.type == DivisionType.chevronInverted && this.parent?.parts.indexOf(this) == 1)
 				)
 			)));
 			let selected = features.pop();
@@ -200,9 +206,12 @@ class Part {
 						DivisionLine.invected, DivisionLine.indented, DivisionLine.wavy,
 					]);
 				}
-				let ordinary = new Part({device: ordinaryDevice, line: line});
+				let ordinary = new Part({device: ordinaryDevice});
 				this.addCharge(ordinary);
 				ordinary.randomize(selectedFeatures.includes('complexOrdinary') ? 3 : 0);
+				if(line) {
+					ordinary.line = line;
+				}
 			} else {
 				let complex = selectedFeatures.includes('complexMobileCharge');
 				let mobileDevice = randomFromArray([...DEVICE.values()].filter(d => {
@@ -237,7 +246,7 @@ class Part {
 			} else {
 				type = randomFromArray([
 					DivisionType.pale, DivisionType.fess, DivisionType.bend, DivisionType.bendSinister,
-					DivisionType.chevron, DivisionType.chevronReversed,
+					DivisionType.chevron, DivisionType.chevronInverted,
 				]);
 			}
 			let division = new Division(type, DivisionLine.straight);
@@ -270,6 +279,7 @@ class Part {
 			return !pair[0].some((part,i) => !part.equals(pair[1][i]));
 		});
 		return childEquivalences[0] && childEquivalences[1] && this.chargeArrangement == other.chargeArrangement &&
+			this.orientation == other.orientation && this.reversed == other.reversed && this.inverted == other.inverted &&
 			this.device == other.device && this.field.equals(other.field) &&
 			this.chargeCountByRow.join() == other.chargeCountByRow.join() &&
 			this.featureTinctures.join() == other.featureTinctures.join() &&
@@ -298,6 +308,9 @@ class Part {
 			this.featureTinctures.push(this.device.children![this.featureTinctures.length].properTincture ?? null);
 		}
 		this.attitudes = (newDevice.attitudeSets ?? []).map((set,i) => this.attitudes[i] ?? set.options[0]);
+		this.orientation = null;
+		this.reversed = false;
+		this.inverted = false;
 	}
 
 	public updateChargeArrangement(chargeArrangement: ChargeArrangement, chargeCountByRow: number[]=[]) {
@@ -343,6 +356,12 @@ class Part {
 		}
 	}
 
+	public updateOrientation(newOrientation: Orientation) {
+		if(newOrientation != this.getEffectiveOrientation()) {
+			this.orientation = newOrientation;
+		}
+	}
+
 	public divide(div: Division): void {
 		if(div.type == DivisionType.none) {
 			let firstSub = this.parts[0];
@@ -381,6 +400,21 @@ class Part {
 		}
 		return chargeGroups;
 	}
+
+	public getEffectiveOrientation() {
+		if(this.device.type != DeviceType.mobileCharge) {
+			return Orientation.palewise;
+		}
+		if(this.orientation != null) {
+			return this.orientation;
+		}
+		if(this.parent?.device.id == DeviceId.bend) {
+			return Orientation.bendwise;
+		} else if(this.parent?.device.id == DeviceId.bendSinister) {
+			return Orientation.bendwiseSinister;
+		}
+		return Orientation.palewise;
+	}
 }
 
 enum DivisionType {
@@ -390,7 +424,7 @@ enum DivisionType {
 	bend,
 	bendSinister,
 	chevron,
-	chevronReversed,
+	chevronInverted,
 	quarterly,
 	saltire,
 }
@@ -424,7 +458,7 @@ enum ChargeArrangement {
 	inBend,
 	inBendSinister,
 	inChevron,
-	inChevronReversed,
+	inChevronInverted,
 	inCross,
 	inFess,
 	inPale,
@@ -514,9 +548,17 @@ enum Attitude {
 	forcene,
 }
 
+enum Orientation {
+	palewise,
+	bendwise,
+	bendwiseSinister,
+	fesswise,
+}
+
 class Device {
 	id: DeviceId;
 	type: DeviceType;
+	symmetry: number; // number of axes upon which the device is symmetrical
 	properTincture?: Tincture;
 	children?: Device[];
 	attitudeSets?: AttitudeSet[];
@@ -534,7 +576,7 @@ enum DeviceType {
 enum DeviceId {
 	heater, kite, iberian, french, english, swiss, dutch, cartouche, lozengeEscutcheon, banner,
 	sub,
-	bend, bendSinister, fess, pale, chevron, chevronReversed, canton, quarter, chief, base, cross, saltire,
+	bend, bendSinister, fess, pale, chevron, chevronInverted, canton, quarter, chief, base, cross, saltire,
 	roundel, annulet, lozenge, mascle, mullet, heart, escutcheon, crescent, billet, tower, crown, key, trefoil, sword,
 	lion, eagle, stag, hind, griffin, unicorn,
 	hilted, langued, armed, unguled, crined,
@@ -542,60 +584,60 @@ enum DeviceId {
 
 const DEVICE: Map<DeviceId, Device> = (() => {
 	let map = new Map();
-	const langued = { id: DeviceId.langued, type: DeviceType.feature, properTincture:Tincture.gules };
-	const armed = { id: DeviceId.armed, type: DeviceType.feature, properTincture:Tincture.argent };
-	const unguled = { id: DeviceId.unguled, type: DeviceType.feature, properTincture:Tincture.argent };
+	const langued = { id: DeviceId.langued, type: DeviceType.feature, properTincture:Tincture.gules, symmetry: 0 };
+	const armed = { id: DeviceId.armed, type: DeviceType.feature, properTincture:Tincture.argent, symmetry: 0 };
+	const unguled = { id: DeviceId.unguled, type: DeviceType.feature, properTincture:Tincture.argent, symmetry: 0 };
 	let devices: Device[] = [
-		{ id: DeviceId.heater, type: DeviceType.escutcheon },
-		{ id: DeviceId.kite, type: DeviceType.escutcheon },
-		{ id: DeviceId.iberian, type: DeviceType.escutcheon },
-		{ id: DeviceId.french, type: DeviceType.escutcheon },
-		{ id: DeviceId.english, type: DeviceType.escutcheon },
-		{ id: DeviceId.swiss, type: DeviceType.escutcheon },
-		{ id: DeviceId.dutch, type: DeviceType.escutcheon },
-		{ id: DeviceId.cartouche, type: DeviceType.escutcheon },
-		{ id: DeviceId.lozengeEscutcheon, type: DeviceType.escutcheon },
-		{ id: DeviceId.banner, type: DeviceType.escutcheon },
+		{ id: DeviceId.heater, type: DeviceType.escutcheon, symmetry: 1 },
+		{ id: DeviceId.kite, type: DeviceType.escutcheon, symmetry: 1 },
+		{ id: DeviceId.iberian, type: DeviceType.escutcheon, symmetry: 1 },
+		{ id: DeviceId.french, type: DeviceType.escutcheon, symmetry: 1 },
+		{ id: DeviceId.english, type: DeviceType.escutcheon, symmetry: 1 },
+		{ id: DeviceId.swiss, type: DeviceType.escutcheon, symmetry: 1 },
+		{ id: DeviceId.dutch, type: DeviceType.escutcheon, symmetry: 0 },
+		{ id: DeviceId.cartouche, type: DeviceType.escutcheon, symmetry: 1 },
+		{ id: DeviceId.lozengeEscutcheon, type: DeviceType.escutcheon, symmetry: 2 },
+		{ id: DeviceId.banner, type: DeviceType.escutcheon, symmetry: 2 },
 
-		{ id: DeviceId.sub, type: DeviceType.subdivision },
+		{ id: DeviceId.sub, type: DeviceType.subdivision, symmetry:0 },
 
-		{ id: DeviceId.bend, type: DeviceType.ordinary, properTincture: Tincture.or },
-		{ id: DeviceId.bendSinister, type: DeviceType.ordinary, properTincture: Tincture.or },
-		{ id: DeviceId.fess, type: DeviceType.ordinary },
-		{ id: DeviceId.pale, type: DeviceType.ordinary },
-		{ id: DeviceId.chevron, type: DeviceType.ordinary },
-		{ id: DeviceId.chevronReversed, type: DeviceType.ordinary },
-		{ id: DeviceId.chief, type: DeviceType.ordinary },
-		{ id: DeviceId.base, type: DeviceType.ordinary },
-		{ id: DeviceId.canton, type: DeviceType.ordinary },
-		{ id: DeviceId.quarter, type: DeviceType.ordinary },
-		{ id: DeviceId.cross, type: DeviceType.ordinary },
-		{ id: DeviceId.saltire, type: DeviceType.ordinary },
+		{ id: DeviceId.bend, type: DeviceType.ordinary, properTincture: Tincture.or, symmetry: 0 },
+		{ id: DeviceId.bendSinister, type: DeviceType.ordinary, properTincture: Tincture.or, symmetry: 0 },
+		{ id: DeviceId.fess, type: DeviceType.ordinary, symmetry: 0 },
+		{ id: DeviceId.pale, type: DeviceType.ordinary, symmetry: 0 },
+		{ id: DeviceId.chevron, type: DeviceType.ordinary, symmetry: 0 },
+		{ id: DeviceId.chevronInverted, type: DeviceType.ordinary, symmetry: 0 },
+		{ id: DeviceId.chief, type: DeviceType.ordinary, symmetry: 0 },
+		{ id: DeviceId.base, type: DeviceType.ordinary, symmetry: 0 },
+		{ id: DeviceId.canton, type: DeviceType.ordinary, symmetry: 0 },
+		{ id: DeviceId.quarter, type: DeviceType.ordinary, symmetry: 0 },
+		{ id: DeviceId.cross, type: DeviceType.ordinary, symmetry: 0 },
+		{ id: DeviceId.saltire, type: DeviceType.ordinary, symmetry: 0 },
 
-		{ id: DeviceId.roundel, type: DeviceType.mobileCharge, properTincture: Tincture.argent },
-		{ id: DeviceId.annulet, type: DeviceType.mobileCharge },
-		{ id: DeviceId.lozenge, type: DeviceType.mobileCharge },
-		{ id: DeviceId.mascle, type: DeviceType.mobileCharge },
-		{ id: DeviceId.mullet, type: DeviceType.mobileCharge, properTincture: Tincture.or },
-		{ id: DeviceId.heart, type: DeviceType.mobileCharge, properTincture: Tincture.gules },
-		{ id: DeviceId.escutcheon, type: DeviceType.mobileCharge },
-		{ id: DeviceId.crescent, type: DeviceType.mobileCharge, properTincture: Tincture.argent },
-		{ id: DeviceId.billet, type: DeviceType.mobileCharge },
-		{ id: DeviceId.tower, type: DeviceType.mobileCharge },
-		{ id: DeviceId.crown, type: DeviceType.mobileCharge, properTincture: Tincture.or },
-		{ id: DeviceId.key, type: DeviceType.mobileCharge, properTincture: Tincture.or },
-		{ id: DeviceId.trefoil, type: DeviceType.mobileCharge, properTincture: Tincture.vert },
-		{ id: DeviceId.sword, type: DeviceType.mobileCharge, properTincture: Tincture.argent, children:[
-			{ id: DeviceId.hilted, type: DeviceType.feature, properTincture: Tincture.or },
+		{ id: DeviceId.roundel, type: DeviceType.mobileCharge, properTincture: Tincture.argent, symmetry: 3 },
+		{ id: DeviceId.annulet, type: DeviceType.mobileCharge, symmetry: 3 },
+		{ id: DeviceId.lozenge, type: DeviceType.mobileCharge, symmetry: 2 },
+		{ id: DeviceId.mascle, type: DeviceType.mobileCharge, symmetry: 2 },
+		{ id: DeviceId.mullet, type: DeviceType.mobileCharge, properTincture: Tincture.or, symmetry: 1 },
+		{ id: DeviceId.heart, type: DeviceType.mobileCharge, properTincture: Tincture.gules, symmetry: 1 },
+		{ id: DeviceId.escutcheon, type: DeviceType.mobileCharge, symmetry: 1 },
+		{ id: DeviceId.crescent, type: DeviceType.mobileCharge, properTincture: Tincture.argent, symmetry: 1 },
+		{ id: DeviceId.billet, type: DeviceType.mobileCharge, symmetry: 2 },
+		{ id: DeviceId.tower, type: DeviceType.mobileCharge, symmetry: 1 },
+		{ id: DeviceId.crown, type: DeviceType.mobileCharge, properTincture: Tincture.or, symmetry: 1 },
+		{ id: DeviceId.key, type: DeviceType.mobileCharge, properTincture: Tincture.or, symmetry: 0 },
+		{ id: DeviceId.trefoil, type: DeviceType.mobileCharge, properTincture: Tincture.vert, symmetry: 1 },
+		{ id: DeviceId.sword, type: DeviceType.mobileCharge, properTincture: Tincture.argent, symmetry: 1, children:[
+			{ id: DeviceId.hilted, type: DeviceType.feature, properTincture: Tincture.or, symmetry: 1 },
 		]},
-		{ id: DeviceId.lion, type: DeviceType.beast,
+		{ id: DeviceId.lion, type: DeviceType.beast, symmetry: 0,
 			children:[langued, armed],
 			attitudeSets: [
 				{ id:AttitudeSetId.beastBody, options:[Attitude.rampant, Attitude.passant, Attitude.none] },
 				{ id:AttitudeSetId.beastHead, options:[Attitude.default, Attitude.regardant, Attitude.guardant] },
 			],
 		},
-		{ id: DeviceId.eagle, type: DeviceType.beast,
+		{ id: DeviceId.eagle, type: DeviceType.beast, symmetry: 0,
 			children:[langued, armed],
 			attitudeSets: [
 				{ id:AttitudeSetId.birdBody, options:[Attitude.displayed, Attitude.rising, Attitude.none] },
@@ -603,21 +645,21 @@ const DEVICE: Map<DeviceId, Device> = (() => {
 				{ id:AttitudeSetId.birdWingDirection, options:[Attitude.elevated, Attitude.lowered] },
 			],
 		},
-		{ id: DeviceId.stag, type: DeviceType.beast,
+		{ id: DeviceId.stag, type: DeviceType.beast, symmetry: 0,
 			children:[langued, armed, unguled],
 			attitudeSets: [
 				{ id:AttitudeSetId.beastBody, options:[Attitude.forcene, Attitude.trippant, Attitude.none] },
 				{ id:AttitudeSetId.beastHead, options:[Attitude.default, Attitude.regardant, Attitude.guardant] },
 			],
 		},
-		{ id: DeviceId.hind, type: DeviceType.beast,
+		{ id: DeviceId.hind, type: DeviceType.beast, symmetry: 0,
 			children:[langued, unguled],
 			attitudeSets: [
 				{ id:AttitudeSetId.beastBody, options:[Attitude.forcene, Attitude.trippant, Attitude.none] },
 				{ id:AttitudeSetId.beastHead, options:[Attitude.default, Attitude.regardant, Attitude.guardant] },
 			],
 		},
-		{ id: DeviceId.griffin, type: DeviceType.beast,
+		{ id: DeviceId.griffin, type: DeviceType.beast, symmetry: 0,
 			children:[langued, armed],
 			attitudeSets: [
 				{ id:AttitudeSetId.beastBody, options:[Attitude.segreant, Attitude.passant, Attitude.none] },
@@ -625,8 +667,8 @@ const DEVICE: Map<DeviceId, Device> = (() => {
 				{ id:AttitudeSetId.birdWingDirection, options:[Attitude.elevated, Attitude.lowered] },
 			],
 		},
-		{ id: DeviceId.unicorn, type: DeviceType.beast,
-			children:[langued, { id: DeviceId.crined, type: DeviceType.feature }, armed, unguled],
+		{ id: DeviceId.unicorn, type: DeviceType.beast, symmetry: 0,
+			children:[langued, { id: DeviceId.crined, type: DeviceType.feature, symmetry: 0 }, armed, unguled],
 			attitudeSets: [
 				{ id:AttitudeSetId.beastBody, options:[Attitude.forcene, Attitude.trippant, Attitude.none] },
 				{ id:AttitudeSetId.beastHead, options:[Attitude.default, Attitude.regardant] },

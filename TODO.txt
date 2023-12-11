@@ -2,12 +2,10 @@
 	- Dragon
 	- Wolf / Fox
 	- Bear
-- Charge orientation
-	- On a bend, charges are bendwise
 - Counter-embattled line where appropriate
 - More Ordinaries
 	- Bordure
-	- Pile (Reversed)
+	- Pile (Inverted)
 	- Pall
 	- Etc.
 - Special charge positioning relative to one another (beasts wearing crowns, standing on clouds, etc.)

@@ -59,6 +59,8 @@ class EditorUIState {
 	selectedChargeClassIndex: number;
 	selectedCharge: number;
 	selectedChargeArrangement: number;
+	selectedReversed: boolean;
+	selectedInverted: boolean;
 	additionalCollapsedParts: Part[]|null = null;
 	updatedEditorIndex: number|null = null;
 
@@ -71,6 +73,8 @@ class EditorUIState {
 		].indexOf(part.device.type);
 		this.selectedCharge = part.device.id;
 		this.selectedChargeArrangement = part.chargeArrangement;
+		this.selectedReversed = part.reversed;
+		this.selectedInverted = part.inverted;
 		this.additionalCollapsedParts = additionalCollapsedParts;
 	}
 }
@@ -247,7 +251,7 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 					<select class="division-type-select">
 					${[
 						DivisionType.none, DivisionType.pale, DivisionType.fess, DivisionType.bend, DivisionType.bendSinister,
-						DivisionType.chevron, DivisionType.chevronReversed, DivisionType.quarterly, DivisionType.saltire,
+						DivisionType.chevron, DivisionType.chevronInverted, DivisionType.quarterly, DivisionType.saltire,
 					].map(div => `
 						<option value="${div}"${uiState.inProgressDivision.type == div ? ' selected' : ''}>
 							${divisionNames.get(div)}
@@ -281,6 +285,56 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 			},
 		},
 	];
+	// orientation section
+	if(uiState.part.device.type == DeviceType.mobileCharge && uiState.part.device.symmetry < 3) {
+		sections.unshift({
+			title: 'Orientation', buttonText: 'Orient',
+			buttonFunc: (event:MouseEvent) => {
+				event.target?.dispatchEvent(createUpdateEvent({
+					func: (ui, el) => {
+						let selector = el.querySelector('.orientation-select');
+						ui.part.updateOrientation(parseInt((selector as HTMLSelectElement).value));
+						ui.part.inverted = ui.selectedInverted;
+						ui.part.reversed = ui.selectedReversed;
+						return true;
+					},
+				}));
+			},
+			contentRows: [
+				`
+					<label>Orientation:</label>
+					<select class="orientation-select">
+					${[...orientationNames.entries()].map(pair => `
+						<option value="${pair[0]}"${uiState.part.getEffectiveOrientation() == pair[0] ? ' selected' : ''}>
+							${pair[1]}
+						</option>
+					`).join('\n')}
+					</select>
+				`,
+				[uiState.selectedReversed, uiState.selectedInverted].map((val,i) => uiState.part.device.symmetry <= i ? `
+					<label>${i ? 'Inverted' : 'Reversed'}:</label>
+					<i id="${i ? 'inverted' : 'reversed'}" style="vertical-align:bottom;"
+						class="checkbox far fa-${val ? 'check-' : ''}square"
+					></i>
+				` : '').filter(t => t).join('<span style="display:inline-block; width:1em;"></span>'),
+			],
+			setUpListeners: (el: HTMLElement) => {
+				([...el.querySelectorAll('.checkbox')] as HTMLElement[]).map(check => check.onclick = event => {
+					let selected = check.classList.contains('fa-check-square');
+					if(check.id == 'reversed') {
+						uiState.selectedReversed = !selected;
+					} else if(check.id == 'inverted') {
+						uiState.selectedInverted = !selected;
+					}
+					event.target?.dispatchEvent(createUpdateEvent({
+						func: (ui, e) => {
+							return false;
+						},
+					}));
+				});
+			},
+		});
+	}
 	// attitude section
 	if(uiState.part.device.attitudeSets?.length) {
 		const attitudeSetLabelMap = new Map([
@@ -490,7 +544,7 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 		let workingField = uiState.inProgressField;
 		let nonPlain = workingField.variation != FieldVariation.plain;
 		sections.push({
-			title: 'Field', buttonText: 'Change',
+			title: 'Field', buttonText: 'Tint',
 			buttonFunc: (event:MouseEvent) => {
 				event.target?.dispatchEvent(createUpdateEvent({
 					func: (ui, el) => {
@@ -582,7 +636,7 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 					${[
 						ChargeArrangement.unspecified, ChargeArrangement.specified, ChargeArrangement.inBend,
 						ChargeArrangement.inBendSinister, ChargeArrangement.inChevron,
-						ChargeArrangement.inChevronReversed, ChargeArrangement.inCross, ChargeArrangement.inFess,
+						ChargeArrangement.inChevronInverted, ChargeArrangement.inCross, ChargeArrangement.inFess,
 						ChargeArrangement.inPale, ChargeArrangement.inSaltire,
 					].map(arr => `
 						<option value="${arr}"${uiState.selectedChargeArrangement == arr ? ' selected' : ''}>
@@ -646,6 +700,7 @@ function updateSingleEditor(editor: HTMLElement, uiState: EditorUIState) {
 		[...el.querySelectorAll('select'),...el.querySelectorAll('input')]
 			.forEach(pt => pt.addEventListener('input', updateForEditing))
 		;
+		([...el.querySelectorAll('.checkbox')] as HTMLElement[]).forEach(pt => pt.addEventListener('click', updateForEditing));
 		section.setUpListeners(el);
 		row.appendChild(el);
 	}
@@ -686,22 +741,6 @@ function exportSVG() {
 }
 
 let shield = new Part({ device: DEVICE.get(DeviceId.heater)! });
-shield.field = Field.createPlain(Tincture.azure);
-// shield.divide(new Division(DivisionType.chevron, DivisionLine.straight));
-let charge = new Part({ device: DEVICE.get(DeviceId.roundel) });
-charge.field = Field.createPlain(Tincture.or);
-// charge.featureTinctures = [ Tincture.gules, Tincture.argent ];
-// charge.attitudes[0] = Attitude.trippant;
-// charge.attitudes[1] = Attitude.default;
-shield.updateChargeArrangement(ChargeArrangement.inCross);
-shield.addCharge(charge);
-shield.addCharge(new Part(charge));
-shield.addCharge(new Part(charge));
-shield.addCharge(new Part(charge));
-shield.addCharge(new Part(charge));
-shield.addCharge(new Part(charge));
-shield.addCharge(new Part(charge));
-shield.addCharge(new Part(charge));
 updateShield();
 let mainEditor = getEditor(shield);
 document.getElementById('editor')?.appendChild(mainEditor);

@@ -791,17 +791,17 @@ function dividePath(path: paper.Path, division: Division, fessPoint: paper.Point
 				bottomRightAngleLine.intersect(path.subtract(paleIntersection), {trace:false}),
 			] as paper.Path[];
 		}
-	} else if([DivisionType.chevron, DivisionType.chevronReversed].includes(division.type)) {
-		let reversed = DivisionType.chevronReversed == division.type;
+	} else if([DivisionType.chevron, DivisionType.chevronInverted].includes(division.type)) {
+		let inverted = DivisionType.chevronInverted == division.type;
 		let anglePoint = fessPoint.clone();
-		anglePoint.y += path.bounds.height * .18 * (reversed ? 1 : -1);
-		let rightAngleLine = getRightAnglePathForLine(path, anglePoint, division.line, reversed);
-		if(!reversed) {
+		anglePoint.y += path.bounds.height * .18 * (inverted ? 1 : -1);
+		let rightAngleLine = getRightAnglePathForLine(path, anglePoint, division.line, inverted);
+		if(!inverted) {
 			rightAngleLine.scale(1,-1,anglePoint);
 		}
 		if(!line) {
 			let result = [path.intersect(rightAngleLine), path.subtract(rightAngleLine)] as paper.Path[];
-			if(!reversed) {
+			if(!inverted) {
 				result.reverse();
 			}
 			return result;
@@ -1030,7 +1030,7 @@ function calcShieldPart(
 			[DeviceId.bend, ChargeArrangement.inBend],
 			[DeviceId.bendSinister, ChargeArrangement.inBendSinister],
 			[DeviceId.chevron, ChargeArrangement.inChevron],
-			[DeviceId.chevronReversed, ChargeArrangement.inChevronReversed],
+			[DeviceId.chevronInverted, ChargeArrangement.inChevronInverted],
 			[DeviceId.saltire, ChargeArrangement.inSaltire],
 			[DeviceId.cross, ChargeArrangement.inCross],
 		]);
@@ -1106,8 +1106,8 @@ function calcShieldPart(
 			case ChargeArrangement.inChevron:
 				lines = dividePath(path, new Division(DivisionType.chevron, DivisionLine.straight), targetMidPoint, true);
 				break;
-			case ChargeArrangement.inChevronReversed:
-				lines = dividePath(path, new Division(DivisionType.chevronReversed, DivisionLine.straight), targetMidPoint, true);
+			case ChargeArrangement.inChevronInverted:
+				lines = dividePath(path, new Division(DivisionType.chevronInverted, DivisionLine.straight), targetMidPoint, true);
 				break;
 			case ChargeArrangement.inCross:
 				lines = dividePath(path, new Division(DivisionType.quarterly, DivisionLine.straight), targetMidPoint, true);
@@ -1201,6 +1201,34 @@ function calcShieldPart(
 						new paper.Size(chargeSize, chargeSize),
 					),
 				).map(p => path.intersect(p));
+				// orientation
+				let chargeCenter = chargePaths[0].bounds.center;
+				if(charge.reversed || charge.inverted) {
+					let xScale = charge.reversed ? -1 : 1;
+					let yScale = charge.inverted ? -1 : 1;
+					for(let p of chargePaths) {
+						p.scale(xScale, yScale, chargeCenter);
+					}
+				}
+				let orientation = charge.getEffectiveOrientation();
+				if(orientation != Orientation.palewise) {
+					let angle = 0;
+					switch(orientation) {
+						case Orientation.bendwise:
+							angle = -45;
+							break;
+						case Orientation.bendwiseSinister:
+							angle = 45;
+							break;
+						case Orientation.fesswise:
+							angle = -90;
+							break;
+					}
+					for(let p of chargePaths) {
+						p.rotate(angle, chargeCenter);
+					}
+				}
+				// apply all properties
 				let chargePart = calcShieldPart(charge, chargePaths.shift()! as paper.Path, targetParts, fessPoint);
 				if(!targetParts || targetParts.includes(charge)) { // add paths for features
 					for(let featureIdx in chargePaths) {
@@ -1250,16 +1278,16 @@ function calcShieldPart(
 				}
 			}
 			chargePathMap.set(ordinary, calcShieldPart(ordinary, path.intersect(ord) as paper.Path, targetParts, fessPoint));
-		} else if([DeviceId.chevron, DeviceId.chevronReversed].includes(ordinary.device.id)) {
-			let reversed = DeviceId.chevronReversed == ordinary.device.id;
+		} else if([DeviceId.chevron, DeviceId.chevronInverted].includes(ordinary.device.id)) {
+			let inverted = DeviceId.chevronInverted == ordinary.device.id;
 			let angles = [true, false].map(ex => {
 				let angle = getRightAnglePathForLine(path, fessPoint, ordinary.line, ex);
-				if(!reversed) {
+				if(!inverted) {
 					angle.scale(1, -1, fessPoint);
 				}
 				return angle;
 			});
-			let dist = halfWidth*2*(reversed ? 1 : -1);
+			let dist = halfWidth*2*(inverted ? 1 : -1);
 			angles[1].translate(new paper.Point(0, dist));
 			let chev = angles[1].subtract(angles[0]);
 			chargePathMap.set(ordinary, calcShieldPart(

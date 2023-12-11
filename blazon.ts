@@ -14,7 +14,7 @@ const deviceNames = new Map<DeviceId, string>([
 	[DeviceId.fess, 'Fess'],
 	[DeviceId.pale, 'Pale'],
 	[DeviceId.chevron, 'Chevron'],
-	[DeviceId.chevronReversed, 'Chevron Reversed'],
+	[DeviceId.chevronInverted, 'Chevron Inverted'],
 	[DeviceId.chief, 'Chief'],
 	[DeviceId.base, 'Base'],
 	[DeviceId.canton, 'Canton'],
@@ -72,7 +72,7 @@ const divisionNames = new Map([
 	[DivisionType.bend, 'Bend'],
 	[DivisionType.bendSinister, 'Bend Sinister'],
 	[DivisionType.chevron, 'Chevron'],
-	[DivisionType.chevronReversed, 'Chevron Reversed'],
+	[DivisionType.chevronInverted, 'Chevron Inverted'],
 	[DivisionType.quarterly, 'Quarterly'],
 	[DivisionType.saltire, 'Saltire'],
 ]);
@@ -83,7 +83,7 @@ const arrangementNames = new Map([
 	[ChargeArrangement.inBend, 'In Bend'],
 	[ChargeArrangement.inBendSinister, 'In Bend Sinister'],
 	[ChargeArrangement.inChevron, 'In Chevron'],
-	[ChargeArrangement.inChevronReversed, 'In Chevron Reversed'],
+	[ChargeArrangement.inChevronInverted, 'In Chevron Inverted'],
 	[ChargeArrangement.inCross, 'In Cross'],
 	[ChargeArrangement.inFess, 'In Fess'],
 	[ChargeArrangement.inPale, 'In Pale'],
@@ -121,6 +121,13 @@ const fieldVariationNames = new Map([
 	[FieldVariation.lozengy, 'Lozengy'],
 ]);
 
+const orientationNames = new Map([
+	[Orientation.palewise, 'Palewise'],
+	[Orientation.bendwise, 'Bendwise'],
+	[Orientation.bendwiseSinister, 'Bendwise Sinister'],
+	[Orientation.fesswise, 'Fesswise'],
+]);
+
 function blazonPart(part: Part): string {
 	let manyParts = part.parts.length > 2;
 	let partGroups: {idx:number, part:Part}[][] = [];
@@ -135,7 +142,7 @@ function blazonPart(part: Part): string {
 	}
 	const numerals = ['I','II','III','IV'];
 	let partBlazons = partGroups.map(group => 
-		`${(manyParts || group.length) ? group.map(p => numerals[p.idx]).join(' and ')+'. ' : ''} ${blazonPart(group[0].part)}`
+		`${(manyParts || group.length > 1) ? group.map(p => numerals[p.idx]).join(' and ')+'. ' : ''} ${blazonPart(group[0].part)}`
 	).join(manyParts ? '; ' : ' and ');
 	let blazon = `${part.division.type != DivisionType.none ? blazonDivision(part.division)+' '+partBlazons : blazonField(part.field)}`;
 	// charges
@@ -214,8 +221,19 @@ function blazonPart(part: Part): string {
 					f => deviceNames.get(f.feature)!.toLowerCase()).join(' and ')+' '+tinctureNames.get(g[0].tincture!)
 				).join(', ');
 			}
+			// orientation
+			let orientation = '';
+			if(charge.orientation != null) {
+				orientation += ' '+orientationNames.get(charge.orientation)?.toLowerCase();
+			}
+			if(charge.reversed) {
+				orientation += ' reversed';
+			}
+			if(charge.inverted) {
+				orientation += ' inverted';
+			}
 			// full charge
-			return `${name}${fullAttitude} ${blazonPart(charge)}${features ? ', '+features : ''}`;
+			return `${name}${fullAttitude}${orientation} ${blazonPart(charge)}${features ? ', '+features : ''}`;
 		}).join(' and ')
 		// charge arrangement
 		if(part.charges.filter(c => [DeviceType.mobileCharge, DeviceType.beast].includes(c.device.type)).length > 1) {
